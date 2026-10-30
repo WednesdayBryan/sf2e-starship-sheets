@@ -227,7 +227,7 @@ export function renderPCSheet(vm) {
 
     <nav class="sss-tabs">
       ${[["stations", "Battle Stations"], ["bays", "Expansion Bays"], ["notes", "Notes"]]
-        .map(([k, l]) => `<button type="button" data-action="tab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
+        .map(([k, l]) => `<button type="button" data-action="sssTab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
         .join("")}
     </nav>
 
@@ -414,7 +414,7 @@ export function renderNPCSheet(vm) {
 
     <nav class="sss-tabs">
       ${[["combat", "Stations & Actions"], ["notes", "Notes"]]
-        .map(([k, l]) => `<button type="button" data-action="tab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
+        .map(([k, l]) => `<button type="button" data-action="sssTab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
         .join("")}
     </nav>
     <div class="sss-tab-body">

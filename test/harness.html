@@ -234,6 +234,16 @@ try {
   // Starship Weapon Crystal: solar weapon and solar flare
   const gunnery = document.querySelector("#pc .sss-gunnery");
   const row = (name) => [...gunnery.querySelectorAll("li.sss-action")].find((li) => li.querySelector(".sss-action-name").textContent.includes(name));
+  // Tabs
+  check("Tab buttons use the module's own action", [...document.querySelectorAll('#pc .sss-tabs button')].map((b) => b.dataset.action), ["sssTab", "sssTab", "sssTab"]);
+  let rendered = 0;
+  sheet.render = () => rendered++;
+  // Foundry merges DEFAULT_OPTIONS down the class chain; the tab action lives on the shared base sheet.
+  await Object.getPrototypeOf(main.PCStarshipSheet).DEFAULT_OPTIONS.actions.sssTab.call(sheet, {}, document.querySelector('#pc [data-tab="bays"]'));
+  check("Clicking Expansion Bays switches tab", [sheet._tab, rendered], ["bays", 1]);
+  const tabHtml = (tab) => { const el = document.createElement("div"); el.innerHTML = renderPCSheet({ name: "x", img: "", editable: true, ship, derived: d, hp: { value: 1, max: 78 }, hpField: "h", crewOptions: [], tab }); return el; };
+  check("Bays tab shows 4 bays with Medical Bay", [tabHtml("bays").querySelectorAll(".sss-bay").length, tabHtml("bays").querySelector('[name="ship.bays.0.name"]').value], [4, "Medical Bay"]);
+  check("Notes tab shows the notes box", !!tabHtml("notes").querySelector('textarea[name="ship.notes"]'), true);
   check("Nova Weapon shows photon attunement", row("Nova Weapon").textContent.includes("Photon") && row("Nova Weapon").textContent.includes("+3 fire"), true);
   check("Nova Strike buttons from melee solar weapon", [...row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), ["+14", "+9", "+4"]);
   check("Nova Strike damage: d10s + Str + photon fire", row("Nova Strike").querySelector('[data-action="novaDamage"]').textContent.trim(), "2d10+4 slashing + 3 fire");

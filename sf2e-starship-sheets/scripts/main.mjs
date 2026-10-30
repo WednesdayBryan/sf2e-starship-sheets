@@ -286,7 +286,8 @@ class StarshipSheetBase extends ActorSheetV2 {
     window: { resizable: true, icon: "fa-solid fa-rocket" },
     form: { handler: StarshipSheetBase.#onSubmit, submitOnChange: true, closeOnSubmit: false },
     actions: {
-      tab: StarshipSheetBase.#onTab,
+      // Not "tab": Foundry's applications reserve that action for their own tab groups.
+      sssTab: StarshipSheetBase.#onTab,
       editImage: StarshipSheetBase.#onEditImage,
       editToken: StarshipSheetBase.#onEditToken,
       setCompromised: StarshipSheetBase.#onSetCompromised,
