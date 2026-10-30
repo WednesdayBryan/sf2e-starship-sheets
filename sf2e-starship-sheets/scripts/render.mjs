@@ -1,7 +1,7 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { novaBlastFormula, novaBlastRange } from "./logic.mjs";
+import { effectiveSpeed, novaBlastDamage, novaWeaponDamage, partsLabel } from "./logic.mjs";
 import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
@@ -38,30 +38,52 @@ function spellButtons(a, s) {
     <button type="button" class="sss-roll" data-action="spellDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
 }
 
-/** Starship Weapon Crystal buttons: the solarian's own solar weapon and solar flare Strikes. */
+/** Starship Weapon Crystal buttons: the solarian's melee solar weapon stats and solar flare, by attunement. */
 function novaButtons(a, s) {
   if (![531, 533, 534, 536].includes(a.id)) return "";
   const i = s.index;
   const off = s.malfunctioning ? " disabled" : "";
   const c = s.helmerData;
-  if (a.id === 531) return `<span class="sss-hint">uses the helmer's stellar attunement</span>`;
   if (!c || c.missing) return `<span class="sss-hint">Assign a solarian</span>`;
+  const tune = c.attunement ? c.attunement[0].toUpperCase() + c.attunement.slice(1) : null;
+  if (a.id === 531) {
+    return tune
+      ? `<span class="sss-trait">${tune}</span>${c.attunement === "photon" ? `<span class="sss-hint">+${Math.ceil(Math.max(1, c.level) / 2)} fire on nova weapon hits</span>` : `<span class="sss-hint">hits reduce the target's Speed by 1 zone</span>`}`
+      : `<span class="sss-hint">${esc(c.name)} isn't attuned</span>`;
+  }
   if (a.id === 533 || a.id === 536) {
-    if (!c.solarWeapon) return `<span class="sss-hint">${esc(c.name)} has no solar weapon Strike</span>`;
-    const variants = a.id === 536 ? c.solarWeapon.variants.slice(0, 1) : c.solarWeapon.variants;
-    return `${variants
-      .map((v, mi) => `<button type="button" class="sss-strike" data-action="novaStrike" data-station="${i}" data-map="${mi}"${off} title="${a.id === 536 ? "No multiple attack penalty" : "Solar weapon Strike"}">${esc(v)}</button>`)
+    const w = c.solarWeapon;
+    if (!w) return `<span class="sss-hint">${esc(c.name)} has no solar weapon Strike</span>`;
+    const pens = a.id === 536 ? [0] : w.agile ? [0, -4, -8] : [0, -5, -10];
+    const damage = partsLabel(novaWeaponDamage(w, c.str, c.level, c.attunement));
+    return `${pens
+      .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaStrike" data-station="${i}" data-map="${mi}"${a.id === 536 ? ` data-surge="1"` : ""}${off}
+        title="${a.id === 536 ? "Nova Surge: no multiple attack penalty" : "Nova weapon Strike vs target's AC"}">${signed(w.attack + pen)}</button>`)
       .join("")}
-      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}"${off}>Damage</button>
+      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}"${off}>${esc(damage)}</button>
       <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
   }
   if (!c.solarFlare) return `<span class="sss-hint">${esc(c.name)} has no solar flare Strike</span>`;
-  const f = c.solarFlare;
+  if (!c.attunement) return `<span class="sss-hint">${esc(c.name)} isn't attuned</span>`;
+  const blast = novaBlastDamage(c.attunement, c.str);
   return `${[0, -5, -10]
-    .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaBlast" data-station="${i}" data-map="${mi}"${off} title="Nova flare Strike vs target's AC">${signed(f.attack + pen)}</button>`)
+    .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaBlast" data-station="${i}" data-map="${mi}"${off} title="Nova flare Strike vs target's AC">${signed(c.solarFlare.attack + pen)}</button>`)
     .join("")}
-    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}"${off} title="Range increment ${novaBlastRange(f)} zones">${esc(novaBlastFormula(f, c.str))} ${esc(f.type)}</button>
+    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}"${off} title="Range increment ${blast.range} zones">${esc(partsLabel(blast.parts))}</button>
     <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
+}
+
+/** Temporary effects on the starship (from nova attacks and the like). */
+function effectsBlock(ship, editable) {
+  const effects = ship.effects ?? [];
+  if (!effects.length) return "";
+  return `<div class="sss-effects"><label>Effects</label><ul>${effects
+    .map(
+      (e, i) => `<li>${esc(e.label)}
+      ${e.persistent ? `<button type="button" class="sss-roll" data-action="rollPersistent" data-index="${i}">Roll ${esc(e.persistent.formula)} ${esc(e.persistent.type)}</button>` : ""}
+      ${editable ? `<button type="button" class="sss-x" data-action="removeEffect" data-index="${i}" title="Remove">✕</button>` : ""}</li>`
+    )
+    .join("")}</ul></div>`;
 }
 
 function actionRow(a, { station, stationName, helmerName, disabled, extraHtml = "" }) {
@@ -137,6 +159,7 @@ function hullBlock(vm) {
       <div class="sss-pips">${compromisedPips(ship.compromised, editable)}</div>
       ${ship.compromised > 0 ? `<button type="button" data-action="hullIntegrity"${dis(editable)}>Hull Integrity Check (DC ${10 + ship.compromised})</button>` : ""}
     </div>
+    ${effectsBlock(ship, editable)}
     <div class="sss-row">
       <label>Wrecked <input type="number" class="sss-small" name="ship.wrecked" data-dtype="Number" value="${ship.wrecked}" min="0"${dis(editable)}></label>
       ${ship.destroyed ? `<span class="sss-destroyed">DESTROYED</span> <button type="button" data-action="clearDestroyed"${dis(editable)}>Clear</button>` : ""}
@@ -190,7 +213,7 @@ export function renderPCSheet(vm) {
         </div>
         <div class="sss-saves">${save("fortitude", "Fort")}${save("reflex", "Ref")}${save("will", "Will")}</div>
         <div class="sss-movement">
-          <div><label>Speed</label><strong>${d.speed}</strong> zones</div>
+          <div title="${d.speed !== d.speedBase ? `Frame Speed ${d.speedBase}, changed by effects` : ""}"><label>Speed</label><strong>${d.speed}</strong> zones${d.speed !== d.speedBase ? ` <span class="sss-hint">(base ${d.speedBase})</span>` : ""}</div>
           <div title="Frame ${d.sensor.base}${d.sensor.bonus ? ` + scanners ${d.sensor.bonus}` : ""}"><label>Sensor Range</label><strong>${d.sensor.total}</strong> zones</div>
           <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}" placeholder="e.g. east"${dis(editable)}></div>
         </div>
@@ -371,7 +394,7 @@ export function renderNPCSheet(vm) {
           ${stat("Will", signed(vm.saves.will), "rollSave", 'data-save="will"')}
         </div>
         <div class="sss-movement">
-          <div><label>Speed</label><input type="number" class="sss-small" name="ship.speed" data-dtype="Number" value="${ship.speed}"${dis(editable)}> zones</div>
+          <div><label>Speed</label><input type="number" class="sss-small" name="ship.speed" data-dtype="Number" value="${ship.speed}"${dis(editable)}> zones${effectiveSpeed(ship.speed, ship.effects) !== ship.speed ? ` <span class="sss-hint">(now ${effectiveSpeed(ship.speed, ship.effects)})</span>` : ""}</div>
           <div><label>Sensor Range</label><input type="number" class="sss-small" name="ship.sensor" data-dtype="Number" value="${ship.sensor}"${dis(editable)}> zones</div>
           <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}"${dis(editable)}></div>
         </div>

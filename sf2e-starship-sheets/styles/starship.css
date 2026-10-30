@@ -124,6 +124,8 @@
 .sss-pip.is-on { background: var(--sss-hp) !important; border-color: #ff9aa9 !important; }
 .sss-row { display: flex; gap: 12px; align-items: center; }
 .sss-row label { display: flex; gap: 4px; align-items: center; }
+.sss-effects ul { list-style: none; margin: 2px 0; padding: 0; }
+.sss-effects li { display: flex; gap: 6px; align-items: center; color: var(--sss-warn); font-size: 12px; }
 .sss-destroyed { color: var(--sss-hp); font-weight: 800; }
 
 /* tabs */

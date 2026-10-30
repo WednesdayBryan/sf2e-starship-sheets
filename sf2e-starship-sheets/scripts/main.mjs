@@ -6,7 +6,7 @@
 import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastFormula, ventPowerDice, vehicleSync
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -38,6 +38,14 @@ function spellcastingEntry(actor) {
   return entries.sort((x, y) => y.statistic.check.mod - x.statistic.check.mod)[0] ?? null;
 }
 
+/** "photon", "graviton" or null, from the solarian's stellar attunement toggle on their character sheet. */
+function stellarAttunement(actor) {
+  const options = actor?.getRollOptions?.(["all"]) ?? [];
+  if (options.includes("stellar-attunement:photon")) return "photon";
+  if (options.includes("stellar-attunement:graviton")) return "graviton";
+  return null;
+}
+
 /** The solarian's solar weapon and solar flare Strikes (granted by the system while attuned). */
 function solarStrikes(actor) {
   const strikes = actor?.system?.actions ?? [];
@@ -53,16 +61,23 @@ function crewInfo(uuid) {
   if (!a) return null;
   const att = a.system?.proficiencies?.attacks ?? {};
   const solar = solarStrikes(a);
-  const flareDamage = solar.flare?.strike.item?.system?.damage;
+  const weapon = solar.weapon?.strike;
+  const weaponItem = weapon?.item?.system;
   return {
     name: a.name,
     actor: a,
     spellAttack: spellcastingEntry(a)?.statistic.check.mod ?? null,
     str: a.system?.abilities?.str?.mod ?? 0,
-    solarWeapon: solar.weapon ? { variants: solar.weapon.strike.variants.map((v) => v.label), label: solar.weapon.strike.label } : null,
-    solarFlare: solar.flare
-      ? { attack: solar.flare.strike.totalModifier, die: flareDamage?.die ?? "d8", dice: flareDamage?.dice ?? 1, type: flareDamage?.damageType ?? "bludgeoning" }
+    attunement: stellarAttunement(a),
+    solarWeapon: weapon
+      ? {
+          attack: weapon.totalModifier,
+          agile: (weaponItem?.traits?.value ?? []).includes("agile"),
+          dice: weaponItem?.damage?.dice ?? 1,
+          type: weaponItem?.damage?.damageType ?? "bludgeoning"
+        }
       : null,
+    solarFlare: solar.flare ? { attack: solar.flare.strike.totalModifier } : null,
     pilotDC: a.skills?.piloting?.dc?.value ?? null,
     dex: a.system?.abilities?.dex?.mod ?? 0,
     level: a.level ?? 0,
@@ -106,12 +121,15 @@ async function postNotes(actor, title, notes) {
 
 /* ---------------------------------- rolls ---------------------------------- */
 
-async function rollDamage({ formula, type, critical = false, flavor, speaker }) {
+/** Roll damage, as the system's damage roll when possible so its apply-damage buttons appear. `parts` mixes types. */
+async function rollDamage({ formula, type, parts, critical = false, flavor, speaker }) {
+  parts ??= [{ formula, type }];
   const DamageRoll = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll");
   let roll = null;
   if (DamageRoll) {
     try {
-      roll = new DamageRoll(critical ? `{(2*(${formula}))[${type}]}` : `{(${formula})[${type}]}`);
+      const instances = parts.map((p) => (critical ? `(2*(${p.formula}))[${p.type}]` : `(${p.formula})[${p.type}]`));
+      roll = new DamageRoll(`{${instances.join(",")}}`);
       await roll.evaluate();
     } catch (err) {
       console.warn(`${MODULE_ID} | System damage roll failed, using a plain roll`, err);
@@ -119,10 +137,33 @@ async function rollDamage({ formula, type, critical = false, flavor, speaker }) 
     }
   }
   if (!roll) {
-    roll = new Roll(critical ? `2*(${formula})` : formula);
+    const sum = parts.map((p) => `(${p.formula})`).join(" + ");
+    roll = new Roll(critical ? `2*(${sum})` : sum);
     await roll.evaluate();
   }
   return roll.toMessage({ speaker, flavor });
+}
+
+/* ---------------------------------- effects ---------------------------------- */
+
+/** Add temporary effects to a starship (the caller must be able to update it). */
+async function addEffects(actor, effects) {
+  const ship = getShip(actor);
+  const added = effects.map((e) => ({ ...e, id: fu.randomID() }));
+  await actor.update({ [`${FLAG}.effects`]: [...(ship.effects ?? []), ...added] }, { [MODULE_ID]: true });
+}
+
+/** Put effects on the targeted starship; the active GM applies them when the user can't. */
+async function applyEffectsToTarget(effects) {
+  if (!effects.length) return;
+  const target = [...game.user.targets][0]?.actor;
+  if (!target || !isStarship(target)) {
+    ui.notifications.info(`Apply to the target: ${effects.map((e) => e.label).join("; ")}`);
+    return;
+  }
+  if (target.isOwner) return addEffects(target, effects);
+  if (!game.users.activeGM) return ui.notifications.warn("A GM must be connected to apply effects to that starship.");
+  game.socket.emit(`module.${MODULE_ID}`, { type: "addEffects", uuid: target.uuid, effects });
 }
 
 /** A DC (perception, fortitude, reflex or will) of the first targeted token, if any. */
@@ -164,11 +205,13 @@ async function rollCheck({ label, mod, speaker, dc = null, extra = "" }) {
   await roll.evaluate();
   const die = roll.dice[0]?.total ?? 0;
   let outcome = "";
+  let degree = null;
   if (dc) {
-    const degree = degreeOfSuccess(roll.total, die, dc.ac);
+    degree = degreeOfSuccess(roll.total, die, dc.ac);
     outcome = `<div class="sss-outcome sss-degree-${degree}">vs ${esc(dc.name)} (AC ${dc.ac}): <strong>${DEGREE_LABELS[degree]}</strong></div>`;
   }
-  return roll.toMessage({ speaker, flavor: `<strong>${esc(label)}</strong> ${extra}${outcome}` });
+  await roll.toMessage({ speaker, flavor: `<strong>${esc(label)}</strong> ${extra}${outcome}` });
+  return { degree };
 }
 
 /* ---------------------------------- images ---------------------------------- */
@@ -251,7 +294,9 @@ class StarshipSheetBase extends ActorSheetV2 {
       clearDestroyed: StarshipSheetBase.#onClearDestroyed,
       damage: StarshipSheetBase.#onDamage,
       repairHull: StarshipSheetBase.#onRepairHull,
-      restoreShields: StarshipSheetBase.#onRestoreShields
+      restoreShields: StarshipSheetBase.#onRestoreShields,
+      removeEffect: StarshipSheetBase.#onRemoveEffect,
+      rollPersistent: StarshipSheetBase.#onRollPersistent
     }
   };
 
@@ -379,6 +424,21 @@ class StarshipSheetBase extends ActorSheetV2 {
     const result = applyHullRepair(state, input.amount);
     await writeState(this.document, ship, result);
     await postNotes(this.document, `${this.document.name} repairs its hull`, result.notes);
+  }
+
+  static async #onRemoveEffect(event, target) {
+    const index = Number(target.dataset.index);
+    await this.updateShip((s) => s.effects.splice(index, 1));
+  }
+
+  static async #onRollPersistent(event, target) {
+    const effect = this.ship.effects?.[Number(target.dataset.index)];
+    if (!effect?.persistent) return;
+    await rollDamage({
+      ...effect.persistent,
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      flavor: `<strong>Persistent ${esc(effect.persistent.type)} damage</strong> on ${esc(this.document.name)}`
+    });
   }
 
   static async #onRestoreShields() {
@@ -598,57 +658,81 @@ export class PCStarshipSheet extends StarshipSheetBase {
     await writeState(ship, data, result);
   }
 
-  /** The helmer's solar weapon Strike, or a warning when they don't have one. */
-  #solar(target, kind) {
+  /** The helmer's solar armaments (melee solar weapon stats, solar flare, attunement), or a warning. */
+  #solarian(target, need) {
     const { st } = this.#station(target);
     const actor = this.#roller(st);
-    if (!actor) return {};
-    const found = solarStrikes(actor)[kind];
-    if (!found) ui.notifications.warn(`${actor.name} has no ${kind === "weapon" ? "solar weapon" : "solar flare"} Strike. Check their stellar attunement on their character sheet.`);
-    return { actor, found };
+    if (!actor) return null;
+    const info = crewInfo(actor.uuid) ?? {};
+    if (need === "weapon" ? !info.solarWeapon : !info.solarFlare) {
+      ui.notifications.warn(`${actor.name} has no ${need === "weapon" ? "solar weapon" : "solar flare"} Strike. Check their stellar attunement on their character sheet.`);
+      return null;
+    }
+    if (need === "flare" && !info.attunement) {
+      ui.notifications.warn(`${actor.name} isn't graviton- or photon-attuned.`);
+      return null;
+    }
+    return { actor, info, speaker: ChatMessage.getSpeaker({ actor }) };
   }
 
-  /** Nova Strike / Nova Surge: the solarian's own solar weapon Strike, scaled to the starship. */
+  /**
+   * Nova Strike / Nova Surge: the solar weapon's melee attack bonus against the targeted starship's AC.
+   * Nova Surge is a single attack with no multiple attack penalty. A graviton hit slows the target.
+   */
   static async #onNovaStrike(event, target) {
-    const { found } = this.#solar(target, "weapon");
-    await found?.strike.variants?.[Number(target.dataset.map) || 0]?.roll({ event });
+    const s = this.#solarian(target, "weapon");
+    if (!s) return;
+    const w = s.info.solarWeapon;
+    const surge = target.dataset.surge === "1";
+    const mi = surge ? 0 : Number(target.dataset.map) || 0;
+    const penalty = (w.agile ? [0, -4, -8] : [0, -5, -10])[mi];
+    const { degree } = await rollCheck({
+      label: `${surge ? "Nova Surge" : "Nova Strike"}${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: w.attack + penalty,
+      speaker: s.speaker,
+      dc: targetAC(),
+      extra: s.info.attunement ? `<div class="sss-traits-list"><span class="sss-trait">${s.info.attunement}</span></div>` : ""
+    });
+    await applyEffectsToTarget(novaEffects("weapon", s.info.attunement, degree ?? -1));
   }
 
+  /** Nova weapon damage: d10 dice plus Strength, and photon fire when the helmer is photon-attuned. */
   static async #onNovaDamage(event, target) {
-    const { found } = this.#solar(target, "weapon");
-    if (!found) return;
-    await (target.dataset.critical === "1" ? found.strike.critical?.({ event }) : found.strike.damage?.({ event }));
-  }
-
-  /** Nova Blast: the solar flare's attack bonus, rolled against the targeted starship's AC (range is in zones). */
-  static async #onNovaBlast(event, target) {
-    const { actor, found } = this.#solar(target, "flare");
-    if (!found) return;
-    const mi = Number(target.dataset.map) || 0;
-    const penalty = [0, -5, -10][mi];
-    await rollCheck({
-      label: `Nova Blast${mi ? ` (MAP ${penalty})` : ""}`,
-      mod: found.strike.totalModifier + penalty,
-      speaker: ChatMessage.getSpeaker({ actor }),
-      dc: targetAC()
+    const s = this.#solarian(target, "weapon");
+    if (!s) return;
+    const critical = target.dataset.critical === "1";
+    await rollDamage({
+      parts: novaWeaponDamage(s.info.solarWeapon, s.info.str, s.info.level, s.info.attunement),
+      critical,
+      speaker: s.speaker,
+      flavor: `<strong>Nova weapon</strong> ${critical ? "critical " : ""}damage${s.info.attunement === "photon" ? " (includes photon fire)" : ""}`
     });
   }
 
+  /** Nova Blast: the solar flare's attack bonus against the targeted starship's AC; critical effects by attunement. */
+  static async #onNovaBlast(event, target) {
+    const s = this.#solarian(target, "flare");
+    if (!s) return;
+    const mi = Number(target.dataset.map) || 0;
+    const penalty = [0, -5, -10][mi];
+    const { degree } = await rollCheck({
+      label: `Nova Blast (${s.info.attunement})${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: s.info.solarFlare.attack + penalty,
+      speaker: s.speaker,
+      dc: targetAC()
+    });
+    await applyEffectsToTarget(novaEffects("blast", s.info.attunement, degree ?? -1));
+  }
+
   static async #onNovaBlastDamage(event, target) {
-    const { actor } = this.#solar(target, "flare");
-    if (!actor) return;
-    const flare = crewInfo(actor.uuid)?.solarFlare;
-    if (!flare) return;
+    const s = this.#solarian(target, "flare");
+    if (!s) return;
     const critical = target.dataset.critical === "1";
-    const photon = flare.type === "fire";
     await rollDamage({
-      formula: novaBlastFormula(flare, crewInfo(actor.uuid).str),
-      type: flare.type,
+      parts: novaBlastDamage(s.info.attunement, s.info.str).parts,
       critical,
-      speaker: ChatMessage.getSpeaker({ actor }),
-      flavor: `<strong>Nova Blast</strong> (${photon ? "photon" : "graviton"}) ${critical ? "critical " : ""}damage${critical
-        ? photon ? " — the target also takes 1d6 persistent fire damage." : " — the target is off-kilter and its Speed is reduced by 1 zone for 1 round."
-        : ""}`
+      speaker: s.speaker,
+      flavor: `<strong>Nova Blast</strong> (${s.info.attunement}) ${critical ? "critical " : ""}damage`
     });
   }
 
@@ -1032,6 +1116,15 @@ Hooks.once("init", () => {
     for (const app of foundry.applications.instances.values()) {
       if (app instanceof PCStarshipSheet && app.rendered && app.ship.stations.some((s) => s.helmer === actor.uuid)) app.render();
     }
+  });
+
+  // Players can't update starships they don't own; the active GM applies effects for them.
+  Hooks.once("ready", () => {
+    game.socket.on(`module.${MODULE_ID}`, (data) => {
+      if (data?.type !== "addEffects" || game.users.activeGM?.id !== game.user.id) return;
+      const actor = fromUuidSync(data.uuid);
+      if (actor && isStarship(actor)) addEffects(actor, data.effects);
+    });
   });
 
   game.modules.get(MODULE_ID).api = { getShip, derivedFor, isStarship, createStarshipDialog };

@@ -29,6 +29,7 @@ export function defaultPCShip(frameKey = "explorer", level = 1) {
     traits: "Tech",
     resistances: "",
     notes: "",
+    effects: [],
     bays: Array.from({ length: EXPANSION_BAYS }, () => ({ name: "", notes: "" })),
     stations: [
       station("pilot", true, frame.defaults.pilot),
@@ -53,6 +54,7 @@ export function defaultNPCShip() {
     destroyed: false,
     heading: "",
     notes: "",
+    effects: [],
     stations: [{ type: "pilot", name: "Boost Thrusters, Change Heading", malfunctioning: false }]
   };
 }
@@ -132,7 +134,8 @@ export function derivePCShip(ship, crew = {}) {
       reflex: { base: ref, item: refItem, total: ref + refItem },
       will: { base: will, item: willItem, total: will + willItem }
     },
-    speed,
+    speed: effectiveSpeed(speed, ship.effects),
+    speedBase: speed,
     sensor: { base: frame.sensor, bonus: sensorBonus, total: frame.sensor + sensorBonus },
     shieldDice: generateShieldsDice(level),
     stations,
@@ -263,14 +266,47 @@ export function actionCheck(id, stationType) {
   return { skills: c.skills, vs: c.vs ?? null, dc: c.dc ?? null, secret: !!c.secret };
 }
 
-/** Nova Blast damage: the solar flare's die plus Strength (graviton 1d8 bludgeoning, photon 1d6 fire). */
-export function novaBlastFormula(flare, str) {
-  const s = Math.trunc(str) || 0;
-  return `${flare.dice ?? 1}${flare.die ?? "d8"}${s ? (s > 0 ? `+${s}` : `${s}`) : ""}`;
+const withMod = (base, mod) => {
+  const m = Math.trunc(mod) || 0;
+  return `${base}${m ? (m > 0 ? `+${m}` : `${m}`) : ""}`;
+};
+
+/** "2d10+4 slashing + 3 fire" */
+export const partsLabel = (parts) => parts.map((p) => `${p.formula} ${p.type}`).join(" + ");
+
+/**
+ * Nova weapon damage (Nova Strike / Nova Surge): the solar weapon's dice as d10s plus Strength, and with photon
+ * attunement extra fire damage equal to half the solarian's level (rounded up).
+ */
+export function novaWeaponDamage(weapon, str, level, attunement) {
+  const parts = [{ formula: withMod(`${weapon.dice ?? 1}d10`, str), type: weapon.type ?? "bludgeoning" }];
+  if (attunement === "photon") parts.push({ formula: String(Math.ceil(Math.max(1, level) / 2)), type: "fire" });
+  return parts;
 }
 
-/** Nova Blast range increment in zones by attunement. */
-export const novaBlastRange = (flare) => (flare?.type === "fire" ? 4 : 2);
+/** Nova Blast: graviton 1d8 bludgeoning (range 2 zones) or photon 1d6 fire (range 4 zones), plus Strength. */
+export function novaBlastDamage(attunement, str) {
+  const photon = attunement === "photon";
+  return { parts: [{ formula: withMod(photon ? "1d6" : "1d8", str), type: photon ? "fire" : "bludgeoning" }], range: photon ? 4 : 2 };
+}
+
+/**
+ * Effects a nova attack puts on the target starship, by attunement and degree of success
+ * (0 critical failure … 3 critical success).
+ */
+export function novaEffects(kind, attunement, degree) {
+  if (kind === "weapon" && attunement === "graviton" && degree >= 2) {
+    return [{ label: "−1 zone Speed until the end of its next turn (graviton nova weapon)", speed: -1 }];
+  }
+  if (kind === "blast" && degree === 3) {
+    if (attunement === "graviton") return [{ label: "Off-kilter, −1 zone Speed for 1 round (graviton Nova Blast)", speed: -1, offKilter: true }];
+    if (attunement === "photon") return [{ label: "1d6 persistent fire damage (photon Nova Blast)", persistent: { formula: "1d6", type: "fire" } }];
+  }
+  return [];
+}
+
+/** Speed after temporary effects. */
+export const effectiveSpeed = (speed, effects = []) => Math.max(0, speed + effects.reduce((n, e) => n + (Number(e.speed) || 0), 0));
 
 /** Rank a cantrip is automatically heightened to. */
 export const cantripRank = (level) => Math.max(1, Math.ceil(level / 2));

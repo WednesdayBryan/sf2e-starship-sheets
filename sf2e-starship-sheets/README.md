@@ -41,11 +41,18 @@ Give your players **Owner** permission on the player starship so they can use it
   - **Cosmic Bombardment** asks for a rank and the actions spent, then rolls its automatic-hit missiles.
   - **Cosmic Fortification** and **Cosmic Repairs** ask for a rank, roll, and restore Shield Points or Hull Points. They affect the targeted starship if you own it; otherwise they affect this one.
   - Chat reminds the caster which rank of spell slot to expend.
-- **Starship Weapon Crystal (solarian).** The gunnery's helmer uses their own solar armaments, with the stellar attunement set on their character sheet.
-  - **Nova Strike** rolls the solarian's solar weapon Strike: three attack buttons plus Damage and Crit. Photon fire damage and the graviton note come from the system.
-  - **Nova Surge** rolls that Strike once, without the multiple attack penalty.
-  - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Its damage is the flare's die plus Strength (graviton 1d8 bludgeoning, range 2 zones; photon 1d6 fire, range 4 zones), and the critical effect is noted in chat.
-  - If the solar weapon has reach, the rules give the nova weapon a d10 damage die instead. Use the system's two-hand d10 toggle on the character sheet for that.
+- **Starship Weapon Crystal (solarian).** The gunnery's helmer uses their own solar armaments. Graviton or photon comes from the stellar attunement on their character sheet.
+  - **Nova Weapon** shows the helmer's attunement and what it adds.
+  - **Nova Strike** uses the solar weapon's melee attack bonus against the targeted starship's AC, with the multiple attack penalty (−4/−8 if agile). Damage is the weapon's dice as d10s + Strength. Photon attunement adds fire damage equal to half the solarian's level, rounded up.
+  - **Nova Surge** uses the same numbers as Nova Strike, as one attack with no multiple attack penalty.
+  - A graviton Nova Strike or Surge hit gives the target −1 zone Speed until the end of its next turn.
+  - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Damage is graviton 1d8 bludgeoning (range 2 zones) or photon 1d6 fire (range 4 zones), plus Strength.
+  - On a Nova Blast critical hit, a graviton blast makes the target off-kilter with −1 zone Speed, and a photon blast gives it 1d6 persistent fire.
+- **Starship effects.** Effects from these attacks appear on the target starship's sheet:
+  - Speed shows the reduced value.
+  - Persistent damage has a Roll button.
+  - Each effect has a ✕ to remove it when it ends.
+  - When a player hits a starship they don't own, the GM's client adds the effect, so a GM must be connected.
 - **Hull and shields:**
   - **Damage** takes damage from SP first; bypassing damage skips SP.
   - At 0 HP the ship becomes compromised, adding its wrecked value, and every station becomes malfunctioning.
