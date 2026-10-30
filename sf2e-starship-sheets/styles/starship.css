@@ -43,6 +43,12 @@
   min-height: 24px;
   font-size: 13px;
 }
+/* Open dropdown lists use the browser's white background, so their text must be dark. */
+.sss-sheet select option,
+.sss-sheet select optgroup {
+  color: #000;
+  background: #fff;
+}
 .sss-sheet input:disabled,
 .sss-sheet select:disabled { opacity: 0.85; }
 .sss-sheet button {
