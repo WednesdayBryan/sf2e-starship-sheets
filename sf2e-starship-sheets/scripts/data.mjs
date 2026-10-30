@@ -306,6 +306,46 @@ export const WEAPONS = {
   "magnetar-rail": W("Magnetar Rail", "17-magnetar-rail", 10, "piercing", 6, ["Analog", "Automatic", "Ordnance"], "advanced", "Projectile")
 };
 
+/**
+ * Weapons an NPC starship can carry: the starship weapons plus NPC-only ones from Tech Core stat blocks.
+ * `defaultTiers` match the stat block the weapon comes from.
+ */
+export const NPC_WEAPONS = {
+  ...WEAPONS,
+  "breaching-ram": {
+    name: "Breaching Ram", die: 10, type: "piercing", range: 0, traits: ["Melee"], category: "melee", group: "",
+    url: "creatures/450-jinsul-breacher", defaultTiers: { attackTier: "moderate", damageTier: "high" }
+  }
+};
+
+const COMMON_ACTIONS_URL = "rules/1423-common-actions-and-features";
+const DEFAULT_ACTIONS_URL = "rules/1424-default-actions";
+const NA = (key, name, cost, extra = {}) => ({ key, name, cost, traits: [], freq: "", url: COMMON_ACTIONS_URL, ...extra });
+
+/** Common NPC starship station actions (Tech Core pg. 208), by battle station. */
+export const NPC_STATION_ACTIONS = {
+  pilot: [
+    NA("boost-thrusters", "Boost Thrusters", 1, { traits: ["Move"], freq: "once per turn" }),
+    NA("change-heading", "Change Heading", 1, { traits: ["Move"] }),
+    NA("evade", "Evade", "1-2"),
+    NA("stick-to-cover", "Stick to Cover", 1)
+  ],
+  generator: [
+    NA("fortify-shield-points", "Fortify Shield Points", 1, { roll: "fortify" }),
+    NA("tractor-beam", "Tractor Beam", 1, { save: "fortitude", range: "2 zones" })
+  ],
+  gunnery: [NA("engaged-strike", "Engaged Strike", "r")]
+};
+
+/** Actions every NPC starship can always use. */
+export const NPC_DEFAULT_ACTIONS = [
+  NA("repair-self", "Repair Self", 3, { url: DEFAULT_ACTIONS_URL, roll: "repairSelf" }),
+  NA("seek-starships", "Seek Starships", 1, { url: DEFAULT_ACTIONS_URL, roll: "perception" })
+];
+
+export const npcActionByKey = (key) =>
+  [...Object.values(NPC_STATION_ACTIONS).flat(), ...NPC_DEFAULT_ACTIONS].find((a) => a.key === key) ?? null;
+
 /** NPC starship station types, as written in Tech Core stat blocks. */
 export const NPC_STATIONS = {
   drone: "Drone Console",
@@ -341,6 +381,19 @@ export const STRIKE_DAMAGE_AVERAGE = [
   [38, 30, 25, 20], [40, 32, 27, 21], [43, 34, 28, 23], [45, 36, 30, 24], [48, 37, 31, 25], [50, 38, 32, 26],
   [53, 40, 33, 27], [55, 42, 35, 28], [58, 44, 37, 29], [60, 46, 38, 31], [63, 48, 40, 32], [65, 50, 42, 33],
   [68, 52, 44, 35]
+];
+
+/** The Strike Damage table's own damage expressions, used as-is when a weapon has the same die. */
+export const STRIKE_DAMAGE_EXPRESSION = [
+  ["1d6+1", "1d4+1", "1d4", "1d4"], ["1d6+3", "1d6+2", "1d4+2", "1d4+1"], ["1d8+4", "1d6+3", "1d6+2", "1d4+2"],
+  ["1d12+4", "1d10+4", "1d8+4", "1d6+3"], ["1d12+8", "1d10+6", "1d8+6", "1d6+5"], ["2d10+7", "2d8+5", "2d6+5", "2d4+4"],
+  ["2d12+7", "2d8+7", "2d6+6", "2d4+6"], ["2d12+10", "2d8+9", "2d6+8", "2d4+7"], ["2d12+12", "2d10+9", "2d8+8", "2d6+6"],
+  ["2d12+15", "2d10+11", "2d8+9", "2d6+8"], ["2d12+17", "2d10+13", "2d8+11", "2d6+9"], ["2d12+20", "2d12+13", "2d10+11", "2d6+10"],
+  ["2d12+22", "2d12+15", "2d10+12", "2d8+10"], ["3d12+19", "3d10+14", "3d8+12", "3d6+10"], ["3d12+21", "3d10+16", "3d8+14", "3d6+11"],
+  ["3d12+24", "3d10+18", "3d8+15", "3d6+13"], ["3d12+26", "3d12+17", "3d10+14", "3d6+14"], ["3d12+29", "3d12+18", "3d10+15", "3d6+15"],
+  ["3d12+31", "3d12+19", "3d10+16", "3d6+16"], ["3d12+34", "3d12+20", "3d10+17", "3d6+17"], ["4d12+29", "4d10+20", "4d8+17", "4d6+14"],
+  ["4d12+32", "4d10+22", "4d8+19", "4d6+15"], ["4d12+34", "4d10+24", "4d8+20", "4d6+17"], ["4d12+37", "4d10+26", "4d8+22", "4d6+18"],
+  ["4d12+39", "4d12+24", "4d10+20", "4d6+19"], ["4d12+42", "4d12+26", "4d10+22", "4d6+21"]
 ];
 
 /** Expansion bay facilities (Tech Core). */

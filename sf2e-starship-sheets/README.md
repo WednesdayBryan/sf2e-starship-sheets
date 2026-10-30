@@ -71,6 +71,17 @@ Give your players **Owner** permission on the player starship so they can use it
 - Damage and Crit roll as system damage, so the chat buttons can apply it, with Shield Points absorbing first.
 - Area and automatic weapons get Area Fire and Auto-Fire buttons.
 - If the ship's level changes, its weapons update automatically.
+- When the weapon's die matches the table's damage expression, the table's expression is used exactly.
+- The list also has the **Breaching Ram**, a melee weapon (d10 piercing, same zone) from the Jinsul Breacher. It defaults to Moderate attack and High damage, which reproduces that stat block (+10, 1d10+6 at level 3).
+
+**Station actions.** Each NPC battle station lists Tech Core's common NPC starship actions. Click a name to post it to chat with its Archives of Nethys link.
+- **Pilot's console:** Boost Thrusters, Change Heading, Evade, Stick to Cover.
+- **Generator:** Fortify Shield Points (with a +SP button that adds the fortify value) and Tractor Beam.
+- **Gunnery:** Engaged Strike.
+- **Default actions** every NPC starship can use:
+  - **Repair Self** has a button that restores Hull Points equal to the ship's level and fixes one malfunctioning station.
+  - **Seek Starships** rolls Perception.
+- A malfunctioning station's actions are greyed out.
 
 Add special attacks and abilities as Strikes and actions with **Edit stat block**.
 

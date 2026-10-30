@@ -3,7 +3,10 @@
  * Player starships are system `vehicle` actors and NPC starships are system `npc` actors; all starship data is
  * stored in flags, so disabling this module never leaves the world with actors it can't load.
  */
-import { ACTIONS, AON, EXPANSION_BAY_OPTIONS, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
+import {
+  ACTIONS, AON, EXPANSION_BAY_OPTIONS, FRAMES, MODULE_ID, NPC_STATION_ACTIONS, NPC_STATIONS, NPC_WEAPONS, SAVE_LABELS, SKILL_LABELS,
+  npcActionByKey
+} from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, npcWeapon, ventPowerDice,
@@ -889,6 +892,9 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       npcStrike: NPCStarshipSheet.#onStrike,
       npcDamage: NPCStarshipSheet.#onDamageRoll,
       npcAction: NPCStarshipSheet.#onAction,
+      npcCommonAction: NPCStarshipSheet.#onCommonAction,
+      npcFortify: NPCStarshipSheet.#onFortify,
+      npcRepairSelf: NPCStarshipSheet.#onRepairSelf,
       npcWeaponStrike: NPCStarshipSheet.#onWeaponStrike,
       npcWeaponDamage: NPCStarshipSheet.#onWeaponDamage,
       npcWeaponAction: NPCStarshipSheet.#onWeaponAction,
@@ -967,13 +973,56 @@ export class NPCStarshipSheet extends StarshipSheetBase {
 
   onActionChange(kind, el) {
     if (kind === "addNPCWeapon" && el.value) {
+      const tiers = NPC_WEAPONS[el.value]?.defaultTiers ?? { attackTier: "high", damageTier: "moderate" };
       return this.updateShip((s) => {
-        s.weapons = [...(s.weapons ?? []), { key: el.value, attackTier: "high", damageTier: "moderate" }];
+        s.weapons = [...(s.weapons ?? []), { key: el.value, ...tiers }];
       });
     }
     if (kind !== "assignStation") return;
     const item = this.document.items.get(el.dataset.item);
     return item?.update({ [`flags.${MODULE_ID}.station`]: el.value });
+  }
+
+  /** Post a common NPC starship action to chat with its AoN link. */
+  static async #onCommonAction(event, target) {
+    const a = npcActionByKey(target.dataset.key);
+    if (!a) return;
+    const station = Object.entries(NPC_STATION_ACTIONS).find(([, list]) => list.includes(a))?.[0];
+    const malf = station && this.ship.stations.some((st) => st.type === station && st.malfunctioning);
+    if (malf) ui.notifications.warn(`${a.name}: the ${NPC_STATIONS[station]} is malfunctioning.`);
+    const save = a.save ? `<p>The target${a.range ? ` within ${esc(a.range)}` : ""} attempts a <strong>${SAVE_LABELS[a.save]} save</strong>.</p>` : "";
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      content: `<div class="sss-chat">
+        <header><strong>${esc(a.name)}</strong> ${costGlyph(a.cost)}</header>
+        ${a.traits.length ? `<div class="sss-traits-list">${a.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>` : ""}
+        <p>${esc(this.document.name)}${station ? ` · ${esc(NPC_STATIONS[station])}` : ""}${a.freq ? ` · <em>${esc(a.freq)}</em>` : ""}</p>
+        ${save}
+        ${malf ? `<p class="sss-warn">This station is malfunctioning.</p>` : ""}
+        <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
+      </div>`
+    });
+  }
+
+  /** Fortify Shield Points: regain SP equal to the fortify value. */
+  static async #onFortify() {
+    const { ship, spMax, state } = damageState(this.document);
+    const result = applyShieldGain(state, ship.fortify, spMax);
+    await writeState(this.document, ship, result);
+    await postNotes(this.document, `${this.document.name}: Fortify Shield Points (+${ship.fortify})`, result.notes);
+  }
+
+  /** Repair Self: stop one battle station malfunctioning and regain Hull Points equal to the starship's level. */
+  static async #onRepairSelf() {
+    const { ship, state } = damageState(this.document);
+    const result = applyHullRepair(state, Math.max(0, this.document.level ?? 0));
+    const fixed = ship.stations.findIndex((st) => st.malfunctioning);
+    if (fixed >= 0) {
+      ship.stations[fixed] = { ...ship.stations[fixed], malfunctioning: false };
+      result.notes.push(`${NPC_STATIONS[ship.stations[fixed].type] ?? "A battle station"} is no longer malfunctioning.`);
+    }
+    await writeState(this.document, ship, result);
+    await postNotes(this.document, `${this.document.name}: Repair Self`, result.notes);
   }
 
   #weapon(target) {

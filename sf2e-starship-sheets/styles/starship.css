@@ -180,6 +180,7 @@
 .sss-section { display: flex; gap: 8px; align-items: center; font-size: 12px !important; }
 .sss-npc-station { display: grid; grid-template-columns: 170px 1fr auto auto; gap: 6px; align-items: center; margin-bottom: 4px; }
 .sss-npc-station.is-malfunctioning select { border-color: var(--sss-hp); }
+.sss-npc-station .sss-npc-actions { grid-column: 1 / -1; margin: 0 0 4px 14px; }
 .sss-action-group { margin-bottom: 6px; }
 .sss-action-group.is-malfunctioning label { color: var(--sss-hp); }
 .sss-action-group select { width: 150px; font-size: 11px; }

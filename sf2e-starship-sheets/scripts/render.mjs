@@ -2,7 +2,9 @@
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
 import { effectiveSpeed, novaBlastDamage, partsLabel } from "./logic.mjs";
-import { AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import {
+  NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS,
+  AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -434,6 +436,28 @@ export function renderNPCSheet(vm) {
   </div>`;
 }
 
+/** Common NPC station actions or default actions: name posts a chat card with the AoN link; some also roll. */
+function npcActionList(actions, { ship, disabled = false, level, perception }) {
+  if (!actions.length) return "";
+  const off = disabled ? " disabled" : "";
+  return `<ul class="sss-actions sss-npc-actions">${actions
+    .map((a) => {
+      const extra =
+        a.roll === "fortify" ? `<button type="button" class="sss-roll" data-action="npcFortify"${off} title="Regain Shield Points equal to the fortify value">+${ship.fortify} SP</button>` :
+        a.roll === "repairSelf" ? `<button type="button" class="sss-roll" data-action="npcRepairSelf" title="Stop a battle station malfunctioning and regain Hull Points equal to its level">+${Math.max(0, level ?? 0)} HP, fix a station</button>` :
+        a.roll === "perception" ? `<button type="button" class="sss-roll" data-action="rollPerception" title="Perception check vs. Stealth DCs"><i class="fa-solid fa-dice-d20"></i> Perception ${signed(perception)}</button>` :
+        a.save ? `<span class="sss-freq">target: ${SAVE_LABELS[a.save]} save${a.range ? `, within ${esc(a.range)}` : ""}</span>` : "";
+      return `<li class="sss-action${disabled ? " is-disabled" : ""}">
+        <button type="button" class="sss-action-name" data-action="npcCommonAction" data-key="${a.key}" title="Post to chat">${costGlyph(a.cost)} ${esc(a.name)}</button>
+        ${a.traits.length ? `<span class="sss-freq">${esc(a.traits.join(", "))}</span>` : ""}
+        ${a.freq ? `<span class="sss-freq">${esc(a.freq)}</span>` : ""}
+        ${extra}
+        ${link(a.url, "↗")}
+      </li>`;
+    })
+    .join("")}</ul>`;
+}
+
 /** Starship weapons on an NPC starship, with attack and damage from its level. */
 function npcWeaponsBlock(vm) {
   const { ship, editable } = vm;
@@ -444,7 +468,7 @@ function npcWeaponsBlock(vm) {
     .map((w) => {
       if (w.missing) return `<li class="sss-weapon">${esc(w.name)} ${editable ? `<button type="button" class="sss-x" data-action="removeNPCWeapon" data-index="${w.index}">✕</button>` : ""}</li>`;
       return `<li class="sss-weapon">
-        <div class="sss-weapon-head">${link(w.url, w.name)} <span class="sss-dim">${esc(w.category)} · range increment ${w.range} zones</span>
+        <div class="sss-weapon-head">${link(w.url, w.name)} <span class="sss-dim">${w.range === 0 ? "melee · targets in the same zone" : `${esc(w.category)} · range increment ${w.range} zones`}</span>
           ${editable ? `<button type="button" class="sss-x" data-action="removeNPCWeapon" data-index="${w.index}" title="Remove">✕</button>` : ""}</div>
         <div class="sss-weapon-roll">
           ${w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="npcWeaponStrike" data-weapon="${w.index}" data-map="${mi}" title="Attack vs target's AC">${signed(w.attack + pen)}</button>`).join("")}
@@ -464,7 +488,9 @@ function npcWeaponsBlock(vm) {
   return `<section class="sss-card">
     <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}</label>
     <ul class="sss-weapons-list">${rows || `<li class="sss-hint">No starship weapons yet.</li>`}</ul>
-    ${editable ? `<select data-action-change="addNPCWeapon"><option value="">+ Add starship weapon…</option>${Object.entries(WEAPONS).map(([k, w]) => opt(k, `${w.name} (${w.category}, ${w.range} zones)`, "")).join("")}</select>` : ""}
+    ${editable ? `<select data-action-change="addNPCWeapon"><option value="">+ Add starship weapon…</option>${Object.entries(NPC_WEAPONS)
+      .map(([k, w]) => opt(k, w.range === 0 ? `${w.name} (melee)` : `${w.name} (${w.category}, ${w.range} zones)`, ""))
+      .join("")}</select>` : ""}
   </section>`;
 }
 
@@ -477,6 +503,7 @@ function npcCombat(vm) {
       <input type="text" name="ship.stations.${i}.name" value="${esc(st.name)}" placeholder="What it runs (e.g. coilgun, Boost Thrusters)"${dis(editable)}>
       <label class="sss-malf"><input type="checkbox" name="ship.stations.${i}.malfunctioning"${st.malfunctioning ? " checked" : ""}${dis(editable)}> Malfunctioning</label>
       ${editable ? `<button type="button" class="sss-x" data-action="removeNPCStation" data-index="${i}" title="Remove">✕</button>` : ""}
+      ${npcActionList(NPC_STATION_ACTIONS[st.type] ?? [], { ship, disabled: st.malfunctioning })}
     </li>`
     )
     .join("");
@@ -525,7 +552,9 @@ function npcCombat(vm) {
     <ul class="sss-weapons-list">${strikes}</ul>
   </section>
   <section class="sss-card">
-    <label class="sss-section">Actions <span class="sss-hint">Every NPC starship can also ${link("rules/1407-starship-archive", "Repair Self and Seek Starships")}</span></label>
+    <label class="sss-section">Default actions <span class="sss-hint">every NPC starship can use these</span></label>
+    ${npcActionList(NPC_DEFAULT_ACTIONS, { ship, level: vm.level, perception: vm.perception })}
+    <label class="sss-section">Actions <span class="sss-hint">(from the NPC stat block)</span></label>
     ${groups || `<p class="sss-hint">No actions yet. Add them with “Edit stat block”, then assign each to a battle station here.</p>`}
   </section>`;
 }

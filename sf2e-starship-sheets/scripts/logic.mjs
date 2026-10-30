@@ -2,7 +2,8 @@
  * Pure starship rules logic: no Foundry globals, so it can be tested in a plain browser.
  */
 import {
-  ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
+  ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, NPC_WEAPONS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
+  STRIKE_DAMAGE_EXPRESSION,
   UNIVERSAL_ACTIONS, UPGRADES, WEAPONS
 } from "./data.mjs";
 
@@ -318,14 +319,17 @@ export const effectiveSpeed = (speed, effects = []) => Math.max(0, speed + effec
  * the tier's average damage.
  */
 export function npcWeapon(entry, level, index = 0) {
-  const data = WEAPONS[entry.key];
+  const data = NPC_WEAPONS[entry.key];
   if (!data) return { index, key: entry.key, name: entry.key ?? "Unknown weapon", missing: true };
   const row = clamp(int(level, 0), -1, 24) + 1;
   const attackTier = NPC_TIERS.includes(entry.attackTier) ? entry.attackTier : "high";
   const damageTier = NPC_TIERS.includes(entry.damageTier) ? entry.damageTier : "moderate";
   const dice = row <= 4 ? 1 : row <= 12 ? 2 : row <= 19 ? 3 : 4;
-  const average = STRIKE_DAMAGE_AVERAGE[row][NPC_TIERS.indexOf(damageTier)];
-  const flat = Math.round(average - dice * (data.die + 1) / 2);
+  const tier = NPC_TIERS.indexOf(damageTier);
+  // Same die as the table's expression: use it exactly. Otherwise reach the table's average with the weapon's die.
+  const expression = STRIKE_DAMAGE_EXPRESSION[row][tier];
+  const sameDie = expression.match(/^\d+d(\d+)/)?.[1] === String(data.die);
+  const flat = Math.round(STRIKE_DAMAGE_AVERAGE[row][tier] - dice * (data.die + 1) / 2);
   return {
     index,
     key: entry.key,
@@ -334,7 +338,7 @@ export function npcWeapon(entry, level, index = 0) {
     damageTier,
     attack: STRIKE_ATTACK_BONUS[row][NPC_TIERS.indexOf(attackTier)],
     map: mapPenalties(data.traits),
-    formula: withMod(`${dice}d${data.die}`, flat),
+    formula: sameDie ? expression : withMod(`${dice}d${data.die}`, flat),
     area: data.traits.some((t) => /^area/i.test(t)),
     automatic: data.traits.includes("Automatic")
   };

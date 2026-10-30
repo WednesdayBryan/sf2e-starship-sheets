@@ -147,7 +147,8 @@ document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
 
 // Render an NPC sheet (Sword-class Attack Vessel)
 const npcShip = { kind: "npc", sp: 6, spMax: 6, fortify: 5, sensor: 4, speed: 4, compromised: 0, wrecked: 0, destroyed: false, heading: "west", notes: "",
-  stations: [{ type: "gunnery", name: "coilgun, light laser cannon", malfunctioning: false }, { type: "pilot", name: "Ambush from Hell, Boost Thrusters, Change Heading, ramming prow", malfunctioning: true }] };
+  stations: [{ type: "gunnery", name: "coilgun, light laser cannon", malfunctioning: false }, { type: "pilot", name: "Ambush from Hell, Boost Thrusters, Change Heading, ramming prow", malfunctioning: true },
+    { type: "generator", name: "", malfunctioning: false }] };
 window.__renderNPC = (over) => renderNPCSheet({ ...window.__npcVM, ship: { ...window.__npcVM.ship, ...over } });
 document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window.__npcVM = {
   name: "Sword-class Attack Vessel", img: "", editable: true, isGM: true, ship: npcShip, level: 2, size: "Medium", traits: ["Tech"],
@@ -172,7 +173,18 @@ const npcEl = document.querySelector("#npc");
 eq("NPC sheet weapon attack buttons", [...npcEl.querySelectorAll('[data-action="npcWeaponStrike"][data-weapon="0"]')].map((b) => b.textContent), ["+11", "+7", "+3"]);
 eq("NPC sheet weapon damage + Area Fire for area weapon", [npcEl.querySelector('[data-action="npcWeaponDamage"][data-weapon="1"]').textContent.trim(), !!npcEl.querySelector('[data-action="npcWeaponAction"][data-action-id="17"]')], ["1d8+4 piercing", true]);
 eq("NPC sheet tier dropdowns", [npcEl.querySelector('[name="ship.weapons.0.attackTier"]').value, npcEl.querySelector('[name="ship.weapons.0.damageTier"]').value], ["high", "low"]);
-eq("Add-weapon picker lists all 17 weapons", npcEl.querySelectorAll('[data-action-change="addNPCWeapon"] option').length, 18);
+eq("Add-weapon picker lists 17 weapons + breaching ram", npcEl.querySelectorAll('[data-action-change="addNPCWeapon"] option').length, 19);
+const ram = npcWeapon({ key: "breaching-ram", attackTier: "moderate", damageTier: "high" }, 3);
+eq("Jinsul Breacher (level 3) breaching ram = +10, 1d10+6 piercing, melee", [ram.attack, ram.formula, ram.type, ram.range], [10, "1d10+6", "piercing", 0]);
+const stationRow = (type) => [...npcEl.querySelectorAll(".sss-npc-station")].find((li) => li.querySelector("select").value === type);
+eq("Pilot's console lists its common actions", [...stationRow("pilot").querySelectorAll('[data-action="npcCommonAction"]')].map((b) => b.textContent.trim().replace(/^\S+\s*/, "").replace(/^\S+–\S+\s*/, "")),
+  ["Boost Thrusters", "Change Heading", "Evade", "Stick to Cover"]);
+eq("Pilot actions link to AoN common actions", stationRow("pilot").querySelector("a.sss-link").getAttribute("href"), "https://2e.aonsrd.com/rules/1423-common-actions-and-features");
+eq("Malfunctioning pilot's console greys its actions", stationRow("pilot").querySelectorAll(".sss-action.is-disabled").length, 4);
+eq("Generator: Fortify Shield Points +5 SP and Tractor Beam", [stationRow("generator").querySelector('[data-action="npcFortify"]').textContent.trim(), stationRow("generator").textContent.includes("Tractor Beam")], ["+5 SP", true]);
+eq("Gunnery: Engaged Strike", stationRow("gunnery").textContent.includes("Engaged Strike"), true);
+eq("Default actions: Repair Self (+2 HP) and Seek Starships (Perception +7)", [npcEl.querySelector('[data-action="npcRepairSelf"]').textContent.trim(), npcEl.querySelector('.sss-npc-actions [data-action="rollPerception"]').textContent.trim()],
+  ["+2 HP, fix a station", "Perception +7"]);
 out[0] = failures ? `<span class="fail">${failures} FAILED</span>` : `<span class="pass">ALL PASSED</span>`;
 document.getElementById("results").innerHTML = out.join("\n");
 
@@ -311,6 +323,19 @@ try {
   strikeLog.length = 0;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Surge").querySelector('[data-action="novaStrike"]'));
   check("Nova Surge rolls the first attack (no MAP); a miss applies nothing", [strikeLog[0], targetUpdates.length], ["weapon v0", 0]);
+  // NPC default and generator actions
+  const npcUpdates = [];
+  globalThis.ChatMessage.create = async () => {};
+  const npcActor = { type: "npc", name: "Jinsul", level: 3, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", sp: 2, spMax: 10, fortify: 5, compromised: 0, wrecked: 0,
+    stations: [{ type: "gunnery", name: "", malfunctioning: true }, { type: "pilot", name: "", malfunctioning: false }] } } },
+    system: { attributes: { hp: { value: 10, max: 40 } } }, update: async (u) => npcUpdates.push(u) };
+  const npcSheet = new main.NPCStarshipSheet();
+  npcSheet.document = npcActor;
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcFortify.call(npcSheet);
+  check("Fortify Shield Points: 2 + 5 = 7 SP", npcUpdates[0]["flags.sf2e-starship-sheets.ship"].sp, 7);
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcRepairSelf.call(npcSheet);
+  check("Repair Self: +3 HP (level 3) and the gunnery stops malfunctioning",
+    [npcUpdates[1]["system.attributes.hp.value"], npcUpdates[1]["flags.sf2e-starship-sheets.ship"].stations.map((s) => s.malfunctioning)], [13, [false, false]]);
   check("Effects show on the NPC sheet", (() => { const el = document.createElement("div"); el.innerHTML = (window.__renderNPC)({ effects: [{ label: "Off-kilter (test)", speed: -1 }] }); return el.textContent.includes("Off-kilter (test)") && el.textContent.includes("(now 3)"); })(), true);
   check("Spell attack rolls caster's spellcasting vs target AC 20 with MAP -5", { label: spellRolls[0].label, dc: spellRolls[0].dc, map: spellRolls[0].modifiers?.[0]?.modifier },
     { label: "Cosmic Cannon: spell attack (MAP -5)", dc: { value: 20, label: "Raider's AC" }, map: -5 });
