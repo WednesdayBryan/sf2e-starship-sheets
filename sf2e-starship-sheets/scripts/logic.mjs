@@ -51,6 +51,7 @@ export function defaultNPCShip() {
     kind: "npc",
     sp: 0,
     spMax: 0,
+    acCircumstance: 0,
     fortify: 0,
     sensor: 4,
     speed: 4,

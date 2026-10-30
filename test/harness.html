@@ -150,7 +150,7 @@ document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
 });
 
 // Render an NPC sheet (Sword-class Attack Vessel)
-const npcShip = { kind: "npc", sp: 6, spMax: 6, fortify: 5, sensor: 4, speed: 4, compromised: 0, wrecked: 0, destroyed: false, heading: "west", notes: "",
+const npcShip = { kind: "npc", sp: 6, spMax: 6, fortify: 5, acCircumstance: 1, sensor: 4, speed: 4, compromised: 0, wrecked: 0, destroyed: false, heading: "west", notes: "",
   stations: [{ type: "gunnery", name: "coilgun, light laser cannon", malfunctioning: false }, { type: "pilot", name: "Ambush from Hell, Boost Thrusters, Change Heading, ramming prow", malfunctioning: true },
     { type: "generator", name: "", malfunctioning: false }] };
 window.__renderNPC = (over) => renderNPCSheet({ ...window.__npcVM, ship: { ...window.__npcVM.ship, ...over } });
@@ -180,6 +180,8 @@ eq("NPC sheet tier dropdowns", [npcEl.querySelector('[name="ship.weapons.0.attac
 const headingText = (sel) => [...document.querySelector(`${sel} [name="ship.heading"]`).options].map((o) => o.textContent.trim());
 eq("Party heading dropdown", headingText("#pc"), ["0° → left to right", "180° ← right to left"]);
 eq("NPC heading dropdown", headingText("#npc"), ["0° ← right to left", "180° → left to right"]);
+eq("NPC AC shows Evade +1 (17 + 1 = 18)", [document.querySelector("#npc .sss-ac-value").textContent.trim(), document.querySelector('#npc [name="ship.acCircumstance"]').value], ["18", "1"]);
+eq("NPC Evade and Stick to Cover have AC buttons", [...document.querySelectorAll('#npc [data-action="npcSetEvade"]')].map((b) => b.textContent.trim()), ["AC +1", "AC +2", "AC +1"]);
 eq("Add-weapon picker lists 17 weapons + breaching ram", npcEl.querySelectorAll('[data-action-change="addNPCWeapon"] option').length, 19);
 const ram = npcWeapon({ key: "breaching-ram", attackTier: "moderate", damageTier: "high" }, 3);
 eq("Jinsul Breacher (level 3) breaching ram = +10, 1d10+6 piercing, melee", [ram.attack, ram.formula, ram.type, ram.range], [10, "1d10+6", "piercing", 0]);
@@ -325,6 +327,10 @@ try {
   nextDie = 20;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
   check("Graviton Nova Blast crit: off-kilter and slowed", targetUpdates[1]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => [e.offKilter, e.speed]), [[true, -1]]);
+  targetShip.flags["sf2e-starship-sheets"].ship.acCircumstance = 2;
+  nextDie = 10;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
+  check("Attacks on an evading NPC ship use its raised AC (20 + 2)", strikeLog.at(-1).includes("AC 22"), true);
   strikeDegree = 1;
   targetUpdates.length = 0;
   strikeLog.length = 0;

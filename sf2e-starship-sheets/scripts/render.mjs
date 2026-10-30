@@ -412,8 +412,15 @@ export function renderNPCSheet(vm) {
 
     <div class="sss-top">
       <section class="sss-card sss-defenses">
-        <div class="sss-ac"><label>Armor Class</label><div class="sss-ac-value">${vm.ac}</div>
-          ${vm.pilotingDC ? `<div class="sss-ac-parts"><span>Piloting DC ${vm.pilotingDC}</span></div>` : ""}</div>
+        <div class="sss-ac"><label>Armor Class</label>
+          <div class="sss-ac-value" title="Stat block AC ${vm.ac}${ship.acCircumstance ? `, +${ship.acCircumstance} circumstance` : ""}">${vm.ac + (Number(ship.acCircumstance) || 0)}</div>
+          <div class="sss-ac-parts">
+            <span>Stat block ${vm.ac}</span>
+            ${vm.pilotingDC ? `<span>Piloting DC ${vm.pilotingDC}</span>` : ""}
+          </div>
+          <select name="ship.acCircumstance" data-dtype="Number"${dis(editable)} title="Circumstance bonus to AC">
+            ${opt(0, "No Evade/Cover", ship.acCircumstance)}${opt(1, "Evade +1 / Stick to Cover +1", ship.acCircumstance)}${opt(2, "Evade +2", ship.acCircumstance)}
+          </select></div>
         <div class="sss-saves">
           ${stat("Fort", signed(vm.saves.fortitude), "rollSave", 'data-save="fortitude"')}
           ${stat("Ref", signed(vm.saves.reflex), "rollSave", 'data-save="reflex"')}
@@ -457,6 +464,8 @@ function npcActionList(actions, { ship, disabled = false, level, perception }) {
     .map((a) => {
       const extra =
         a.roll === "fortify" ? `<button type="button" class="sss-roll" data-action="npcFortify"${off} title="Regain Shield Points equal to the fortify value">+${ship.fortify} SP</button>` :
+        a.key === "evade" ? [1, 2].map((v) => `<button type="button" class="sss-roll" data-action="npcSetEvade" data-value="${v}"${off} title="Set AC +${v} circumstance for 1 round">AC +${v}</button>`).join("") :
+        a.key === "stick-to-cover" ? `<button type="button" class="sss-roll" data-action="npcSetEvade" data-value="1"${off} title="Set AC +1 circumstance while in cover">AC +1</button>` :
         a.roll === "repairSelf" ? `<button type="button" class="sss-roll" data-action="npcRepairSelf" title="Stop a battle station malfunctioning and regain Hull Points equal to its level">+${Math.max(0, level ?? 0)} HP, fix a station</button>` :
         a.roll === "perception" ? `<button type="button" class="sss-roll" data-action="rollPerception" title="Perception check vs. Stealth DCs"><i class="fa-solid fa-dice-d20"></i> Perception ${signed(perception)}</button>` :
         a.save ? `<span class="sss-freq">target: ${SAVE_LABELS[a.save]} save${a.range ? `, within ${esc(a.range)}` : ""}</span>` : "";

@@ -238,7 +238,9 @@ function targetAC() {
   if (!target) return null;
   if (target.type === "vehicle" && isStarship(target)) return { name: target.name, ac: derivedFor(target).derived.ac.total };
   const ac = target.attributes?.ac?.value ?? target.system?.attributes?.ac?.value;
-  return Number.isFinite(ac) ? { name: target.name, ac } : null;
+  // An NPC starship's Evade or Stick to Cover adds a circumstance bonus on top of its stat block AC.
+  const circumstance = isStarship(target) ? Number(getShip(target).acCircumstance) || 0 : 0;
+  return Number.isFinite(ac) ? { name: target.name, ac: ac + circumstance } : null;
 }
 
 async function rollCheck({ label, mod, speaker, dc = null, extra = "" }) {
@@ -925,6 +927,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       npcAction: NPCStarshipSheet.#onAction,
       npcCommonAction: NPCStarshipSheet.#onCommonAction,
       npcFortify: NPCStarshipSheet.#onFortify,
+      npcSetEvade: NPCStarshipSheet.#onSetEvade,
       npcRepairSelf: NPCStarshipSheet.#onRepairSelf,
       npcWeaponStrike: NPCStarshipSheet.#onWeaponStrike,
       npcWeaponDamage: NPCStarshipSheet.#onWeaponDamage,
@@ -998,6 +1001,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
   }
 
   normalizeShip(ship) {
+    ship.acCircumstance = Number(ship.acCircumstance) || 0;
     for (const k of ["sp", "spMax", "fortify", "sensor", "speed", "wrecked"]) ship[k] = Math.max(0, Number(ship[k]) || 0);
     ship.sp = Math.min(ship.sp, ship.spMax);
   }
@@ -1033,6 +1037,12 @@ export class NPCStarshipSheet extends StarshipSheetBase {
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
       </div>`
     });
+  }
+
+  /** Evade / Stick to Cover: set the circumstance bonus to AC. */
+  static async #onSetEvade(event, target) {
+    const value = Number(target.dataset.value) || 0;
+    await this.updateShip((s) => (s.acCircumstance = value));
   }
 
   /** Fortify Shield Points: regain SP equal to the fortify value. */
