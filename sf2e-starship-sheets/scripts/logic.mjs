@@ -1,7 +1,10 @@
 /**
  * Pure starship rules logic: no Foundry globals, so it can be tested in a plain browser.
  */
-import { ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, STATIONS, UNIVERSAL_ACTIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import {
+  ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
+  UNIVERSAL_ACTIONS, UPGRADES, WEAPONS
+} from "./data.mjs";
 
 export const CUSTOM_SLOTS = 4;
 export const EXPANSION_BAYS = 4;
@@ -55,6 +58,7 @@ export function defaultNPCShip() {
     heading: "",
     notes: "",
     effects: [],
+    weapons: [],
     stations: [{ type: "pilot", name: "Boost Thrusters, Change Heading", malfunctioning: false }]
   };
 }
@@ -307,6 +311,34 @@ export function novaEffects(kind, attunement, degree) {
 
 /** Speed after temporary effects. */
 export const effectiveSpeed = (speed, effects = []) => Math.max(0, speed + effects.reduce((n, e) => n + (Number(e.speed) || 0), 0));
+
+/**
+ * An NPC starship's starship weapon, built with GM Core's creature tables at the ship's level: the attack bonus
+ * for the chosen tier, and the weapon's own die with the table's dice count plus a flat modifier that reaches
+ * the tier's average damage.
+ */
+export function npcWeapon(entry, level, index = 0) {
+  const data = WEAPONS[entry.key];
+  if (!data) return { index, key: entry.key, name: entry.key ?? "Unknown weapon", missing: true };
+  const row = clamp(int(level, 0), -1, 24) + 1;
+  const attackTier = NPC_TIERS.includes(entry.attackTier) ? entry.attackTier : "high";
+  const damageTier = NPC_TIERS.includes(entry.damageTier) ? entry.damageTier : "moderate";
+  const dice = row <= 4 ? 1 : row <= 12 ? 2 : row <= 19 ? 3 : 4;
+  const average = STRIKE_DAMAGE_AVERAGE[row][NPC_TIERS.indexOf(damageTier)];
+  const flat = Math.round(average - dice * (data.die + 1) / 2);
+  return {
+    index,
+    key: entry.key,
+    ...data,
+    attackTier,
+    damageTier,
+    attack: STRIKE_ATTACK_BONUS[row][NPC_TIERS.indexOf(attackTier)],
+    map: mapPenalties(data.traits),
+    formula: withMod(`${dice}d${data.die}`, flat),
+    area: data.traits.some((t) => /^area/i.test(t)),
+    automatic: data.traits.includes("Automatic")
+  };
+}
 
 /** Rank a cantrip is automatically heightened to. */
 export const cantripRank = (level) => Math.max(1, Math.ceil(level / 2));

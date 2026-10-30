@@ -2,7 +2,7 @@
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
 import { effectiveSpeed, novaBlastDamage, partsLabel } from "./logic.mjs";
-import { AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import { AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -434,6 +434,40 @@ export function renderNPCSheet(vm) {
   </div>`;
 }
 
+/** Starship weapons on an NPC starship, with attack and damage from its level. */
+function npcWeaponsBlock(vm) {
+  const { ship, editable } = vm;
+  const tierSelect = (name, value) =>
+    `<select name="${name}"${dis(editable)}>${NPC_TIERS.map((t) => opt(t, NPC_TIER_LABELS[t], value)).join("")}</select>`;
+  const malf = ship.stations.some((st) => st.type === "gunnery" && st.malfunctioning);
+  const rows = (vm.weapons ?? [])
+    .map((w) => {
+      if (w.missing) return `<li class="sss-weapon">${esc(w.name)} ${editable ? `<button type="button" class="sss-x" data-action="removeNPCWeapon" data-index="${w.index}">✕</button>` : ""}</li>`;
+      return `<li class="sss-weapon">
+        <div class="sss-weapon-head">${link(w.url, w.name)} <span class="sss-dim">${esc(w.category)} · range increment ${w.range} zones</span>
+          ${editable ? `<button type="button" class="sss-x" data-action="removeNPCWeapon" data-index="${w.index}" title="Remove">✕</button>` : ""}</div>
+        <div class="sss-weapon-roll">
+          ${w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="npcWeaponStrike" data-weapon="${w.index}" data-map="${mi}" title="Attack vs target's AC">${signed(w.attack + pen)}</button>`).join("")}
+          <button type="button" data-action="npcWeaponDamage" data-weapon="${w.index}">${esc(w.formula)} ${esc(w.type)}</button>
+          <button type="button" data-action="npcWeaponDamage" data-weapon="${w.index}" data-critical="1">Crit</button>
+          ${w.area ? `<button type="button" data-action="npcWeaponAction" data-action-id="17">Area Fire</button>` : ""}
+          ${w.automatic ? `<button type="button" data-action="npcWeaponAction" data-action-id="19">Auto-Fire</button>` : ""}
+        </div>
+        <div class="sss-weapon-tiers">
+          <label>Attack ${tierSelect(`ship.weapons.${w.index}.attackTier`, w.attackTier)}</label>
+          <label>Damage ${tierSelect(`ship.weapons.${w.index}.damageTier`, w.damageTier)}</label>
+        </div>
+        <div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>
+      </li>`;
+    })
+    .join("");
+  return `<section class="sss-card">
+    <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}</label>
+    <ul class="sss-weapons-list">${rows || `<li class="sss-hint">No starship weapons yet.</li>`}</ul>
+    ${editable ? `<select data-action-change="addNPCWeapon"><option value="">+ Add starship weapon…</option>${Object.entries(WEAPONS).map(([k, w]) => opt(k, `${w.name} (${w.category}, ${w.range} zones)`, "")).join("")}</select>` : ""}
+  </section>`;
+}
+
 function npcCombat(vm) {
   const { ship, editable } = vm;
   const stations = ship.stations
@@ -485,8 +519,9 @@ function npcCombat(vm) {
     <label class="sss-section">Battle Stations ${editable ? `<button type="button" data-action="addNPCStation">+ Add</button>` : ""}</label>
     <ul class="sss-npc-stations">${stations}</ul>
   </section>
+  ${npcWeaponsBlock(vm)}
   <section class="sss-card">
-    <label class="sss-section">Strikes</label>
+    <label class="sss-section">Strikes <span class="sss-hint">(from the NPC stat block)</span></label>
     <ul class="sss-weapons-list">${strikes}</ul>
   </section>
   <section class="sss-card">

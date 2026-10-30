@@ -321,6 +321,28 @@ export const NPC_STATIONS = {
 export const STARSHIP_IMMUNITIES =
   "bleed, death effects, disease, doomed, drained, fatigued, paralyzed, poison, sickened, spirit, unconscious, vitality, void";
 
+/**
+ * GM Core creature-building tables (pg. 124), which NPC starships use. Index 0 is level -1, up to level 24.
+ * Tiers in order: extreme, high, moderate, low.
+ */
+export const NPC_TIERS = ["extreme", "high", "moderate", "low"];
+export const NPC_TIER_LABELS = { extreme: "Extreme", high: "High", moderate: "Moderate", low: "Low" };
+export const STRIKE_ATTACK_BONUS = [
+  [10, 8, 6, 4], [10, 8, 6, 4], [11, 9, 7, 5], [13, 11, 9, 7], [14, 12, 10, 8], [16, 14, 12, 9], [17, 15, 13, 11],
+  [19, 17, 15, 12], [20, 18, 16, 13], [22, 20, 18, 15], [23, 21, 19, 16], [25, 23, 21, 17], [27, 24, 22, 19],
+  [28, 26, 24, 20], [29, 27, 25, 21], [31, 29, 27, 23], [32, 30, 28, 24], [34, 32, 30, 25], [35, 33, 31, 27],
+  [37, 35, 33, 28], [38, 36, 34, 29], [40, 38, 36, 31], [41, 39, 37, 32], [43, 41, 39, 33], [44, 42, 40, 35],
+  [46, 44, 42, 36]
+];
+/** Average damage per Strike (the number in parentheses in the Strike Damage table). */
+export const STRIKE_DAMAGE_AVERAGE = [
+  [4, 3, 3, 2], [6, 5, 4, 3], [8, 6, 5, 4], [11, 9, 8, 6], [15, 12, 10, 8], [18, 14, 12, 9], [20, 16, 13, 11],
+  [23, 18, 15, 12], [25, 20, 17, 13], [28, 22, 18, 15], [30, 24, 20, 16], [33, 26, 22, 17], [35, 28, 23, 19],
+  [38, 30, 25, 20], [40, 32, 27, 21], [43, 34, 28, 23], [45, 36, 30, 24], [48, 37, 31, 25], [50, 38, 32, 26],
+  [53, 40, 33, 27], [55, 42, 35, 28], [58, 44, 37, 29], [60, 46, 38, 31], [63, 48, 40, 32], [65, 50, 42, 33],
+  [68, 52, 44, 35]
+];
+
 /** Expansion bay facilities (Tech Core). */
 export const EXPANSION_BAY_OPTIONS = {
   "data-center": { name: "Data Center", url: "tactical-starship-combat/expansion-bays/1-data-center" },

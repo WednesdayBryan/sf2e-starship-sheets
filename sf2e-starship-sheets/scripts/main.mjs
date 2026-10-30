@@ -6,7 +6,8 @@
 import { ACTIONS, AON, EXPANSION_BAY_OPTIONS, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, ventPowerDice, vehicleSync
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, npcWeapon, ventPowerDice,
+  vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -888,6 +889,10 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       npcStrike: NPCStarshipSheet.#onStrike,
       npcDamage: NPCStarshipSheet.#onDamageRoll,
       npcAction: NPCStarshipSheet.#onAction,
+      npcWeaponStrike: NPCStarshipSheet.#onWeaponStrike,
+      npcWeaponDamage: NPCStarshipSheet.#onWeaponDamage,
+      npcWeaponAction: NPCStarshipSheet.#onWeaponAction,
+      removeNPCWeapon: NPCStarshipSheet.#onRemoveWeapon,
       addNPCStation: NPCStarshipSheet.#onAddStation,
       removeNPCStation: NPCStarshipSheet.#onRemoveStation,
       openSystemSheet: NPCStarshipSheet.#onOpenSystemSheet
@@ -946,6 +951,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       hpField: "system.attributes.hp.value",
       strikes,
       actions,
+      weapons: (ship.weapons ?? []).map((w, i) => npcWeapon(w, actor.level, i)),
       tab: this._tab ?? "combat"
     };
   }
@@ -960,9 +966,66 @@ export class NPCStarshipSheet extends StarshipSheetBase {
   }
 
   onActionChange(kind, el) {
+    if (kind === "addNPCWeapon" && el.value) {
+      return this.updateShip((s) => {
+        s.weapons = [...(s.weapons ?? []), { key: el.value, attackTier: "high", damageTier: "moderate" }];
+      });
+    }
     if (kind !== "assignStation") return;
     const item = this.document.items.get(el.dataset.item);
     return item?.update({ [`flags.${MODULE_ID}.station`]: el.value });
+  }
+
+  #weapon(target) {
+    const index = Number(target.dataset.weapon);
+    const entry = this.ship.weapons?.[index];
+    return entry ? npcWeapon(entry, this.document.level, index) : null;
+  }
+
+  /** Starship weapon Strike against the targeted starship's AC. */
+  static async #onWeaponStrike(event, target) {
+    const w = this.#weapon(target);
+    if (!w || w.missing) return;
+    const mi = Number(target.dataset.map) || 0;
+    const penalty = w.map[mi];
+    if (this.ship.stations.some((st) => st.type === "gunnery" && st.malfunctioning)) {
+      ui.notifications.warn(`${this.document.name}'s gunnery is malfunctioning.`);
+    }
+    await rollCheck({
+      label: `${w.name} Strike${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: w.attack + penalty,
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      dc: targetAC(),
+      extra: `<div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}<span class="sss-trait">range ${w.range} zones</span></div>`
+    });
+  }
+
+  static async #onWeaponDamage(event, target) {
+    const w = this.#weapon(target);
+    if (!w || w.missing) return;
+    const critical = target.dataset.critical === "1";
+    await rollDamage({
+      formula: w.formula,
+      type: w.type,
+      critical,
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      flavor: `<strong>${esc(w.name)}</strong> ${critical ? "critical " : ""}damage`
+    });
+  }
+
+  static async #onWeaponAction(event, target) {
+    const a = ACTIONS[Number(target.dataset.actionId)];
+    if (!a) return;
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      content: `<div class="sss-chat"><header><strong>${esc(a.name)}</strong> ${costGlyph(a.cost)}</header>
+        <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a></div>`
+    });
+  }
+
+  static async #onRemoveWeapon(event, target) {
+    const index = Number(target.dataset.index);
+    await this.updateShip((s) => s.weapons.splice(index, 1));
   }
 
   #strike(target) {

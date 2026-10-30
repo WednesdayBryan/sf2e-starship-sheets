@@ -17,7 +17,7 @@
 <div class="sf2e-starship-sheets frame" id="pc"><div class="window-content"></div></div>
 <div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
 <script type="module">
-import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank } from "../sf2e-starship-sheets/scripts/logic.mjs";
+import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon } from "../sf2e-starship-sheets/scripts/logic.mjs";
 import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
 
 const out = [];
@@ -47,6 +47,14 @@ const crew = {
   mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
 };
 
+// NPC starship weapons vs Tech Core stat blocks
+const npcW = (key, level, attackTier, damageTier) => { const w = npcWeapon({ key, attackTier, damageTier }, level); return [w.attack, w.formula]; };
+eq("Sword-class (level 2) coilgun, high attack / low damage = +11, 1d6+3", npcW("coilgun", 2, "high", "low"), [11, "1d6+3"]);
+eq("Raider Trident (level -1) scrap-launcher-like d6, moderate/moderate = +6, 1d6", npcW("coilgun", -1, "moderate", "moderate"), [6, "1d6"]);
+eq("Defaults: high attack, moderate damage (level 6 laser) = +17, 2d8+6", npcW("light-laser-cannon", 6), [17, "2d8+6"]);
+eq("Level 12 uses 3 dice (artillery cannon, high) = +26, 3d10+14", npcW("artillery-cannon", 12, "high", "high"), [26, "3d10+14"]);
+eq("Level 20 extreme magnetar rail = +40, 4d10+36", npcW("magnetar-rail", 20, "extreme", "extreme"), [40, "4d10+36"]);
+eq("Agile weapon MAP", npcWeapon({ key: "coilgun" }, 2).map, [0, -4, -8]);
 eq("Cantrip rank at level 6", cantripRank(6), 3);
 eq("Cosmic Cannon rank 1 / 3", [cosmicSpell(504, 1).formula, cosmicSpell(504, 3).formula], ["2d4", "4d4"]);
 eq("Cosmic Bombardment rank 1, 3 actions", cosmicSpell(503, 1, 3).formula, "3d4+3");
@@ -157,8 +165,16 @@ document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window
     { id: "a2", name: "Engaged Strike", cost: "r", traits: [], station: "gunnery" },
     { id: "a3", name: "Repair Self", cost: 1, traits: [], station: "other" }
   ],
+  weapons: [npcWeapon({ key: "coilgun", attackTier: "high", damageTier: "low" }, 2, 0), npcWeapon({ key: "farseeker-missiles" }, 2, 1)],
   tab: "combat"
 });
+const npcEl = document.querySelector("#npc");
+eq("NPC sheet weapon attack buttons", [...npcEl.querySelectorAll('[data-action="npcWeaponStrike"][data-weapon="0"]')].map((b) => b.textContent), ["+11", "+7", "+3"]);
+eq("NPC sheet weapon damage + Area Fire for area weapon", [npcEl.querySelector('[data-action="npcWeaponDamage"][data-weapon="1"]').textContent.trim(), !!npcEl.querySelector('[data-action="npcWeaponAction"][data-action-id="17"]')], ["1d8+4 piercing", true]);
+eq("NPC sheet tier dropdowns", [npcEl.querySelector('[name="ship.weapons.0.attackTier"]').value, npcEl.querySelector('[name="ship.weapons.0.damageTier"]').value], ["high", "low"]);
+eq("Add-weapon picker lists all 17 weapons", npcEl.querySelectorAll('[data-action-change="addNPCWeapon"] option').length, 18);
+out[0] = failures ? `<span class="fail">${failures} FAILED</span>` : `<span class="pass">ALL PASSED</span>`;
+document.getElementById("results").innerHTML = out.join("\n");
 
 // Load main.mjs against minimal Foundry stand-ins: proves it parses and registers.
 const registered = [];

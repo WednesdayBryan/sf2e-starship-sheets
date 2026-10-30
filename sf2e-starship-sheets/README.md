@@ -64,6 +64,16 @@ Give your players **Owner** permission on the player starship so they can use it
 
 ## NPC starship sheet
 
+**Starship weapons.** Under **Stations & Actions**, pick any of the 17 Tech Core starship weapons for the NPC starship.
+- Its attack bonus and damage come from GM Core's creature-building tables at the ship's level, which Tech Core uses for NPC starships. Each weapon has an **Attack** tier and a **Damage** tier (Extreme, High, Moderate or Low), defaulting to High attack and Moderate damage.
+- Damage uses the weapon's own die, with the table's number of dice for that level and a flat bonus that reaches the tier's average.
+- Attack buttons include the multiple attack penalty (−4/−8 for agile weapons) and roll against the targeted starship's AC.
+- Damage and Crit roll as system damage, so the chat buttons can apply it, with Shield Points absorbing first.
+- Area and automatic weapons get Area Fire and Auto-Fire buttons.
+- If the ship's level changes, its weapons update automatically.
+
+Add special attacks and abilities as Strikes and actions with **Edit stat block**.
+
 The NPC starship sheet shows the stat block from the NPC actor: Perception, skills, attributes, AC, saves, HP, Strikes and actions. It uses the system's own strike, damage, save and skill rolls. It also tracks Shield Points, fortify, sensor range, Speed in zones, heading, battle stations (malfunctioning stations are flagged) and compromised/wrecked.
 
 ## Damage from the system's chat buttons
