@@ -156,9 +156,29 @@ globalThis.Hooks = { once: (n, f) => (hooks[n] = f), on: () => {} };
 globalThis.game = { system: { id: "sf2e" }, settings: { register() {} }, modules: new Map([["sf2e-starship-sheets", {}]]) };
 globalThis.Actor = class {};
 try {
-  await import("../sf2e-starship-sheets/scripts/main.mjs");
+  const main = await import("../sf2e-starship-sheets/scripts/main.mjs");
   hooks.init();
   document.getElementById("results").innerHTML += `\n<span class="pass">PASS</span> main.mjs loaded and registered: ${registered.join(", ")}`;
+
+  // Portrait / token image updates
+  const tokenUpdates = [];
+  globalThis.canvas = { scene: { tokens: [{ id: "t1", actorId: "a1", actorLink: true, isOwner: true }, { id: "t2", actorId: "other", actorLink: true, isOwner: true }],
+    updateEmbeddedDocuments: async (type, u) => tokenUpdates.push(...u) } };
+  const mockActor = (img, tokenSrc) => ({ id: "a1", img, prototypeToken: { actorLink: true, texture: { src: tokenSrc } }, updates: [], async update(u) { this.updates.push(u); } });
+  const check = (label, got, want) => {
+    const ok = JSON.stringify(got) === JSON.stringify(want);
+    document.getElementById("results").innerHTML += `\n<span class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span> ${label}: got ${JSON.stringify(got)}${ok ? "" : `, want ${JSON.stringify(want)}`}`;
+  };
+  let a = mockActor("icons/svg/target.svg", "icons/svg/target.svg");
+  await main.setImage(a, "ships/skirmisher.webp", "img");
+  check("Portrait also sets matching token + placed token", [a.updates[0], tokenUpdates], [{ img: "ships/skirmisher.webp", "prototypeToken.texture.src": "ships/skirmisher.webp" }, [{ _id: "t1", "texture.src": "ships/skirmisher.webp" }]]);
+  a = mockActor("ships/old.webp", "tokens/custom.webp");
+  tokenUpdates.length = 0;
+  await main.setImage(a, "ships/new.webp", "img");
+  check("Portrait leaves a custom token alone", [a.updates[0], tokenUpdates.length], [{ img: "ships/new.webp" }, 0]);
+  await main.setImage(a, "tokens/top-down.webp", "token");
+  check("Token button sets only the token", a.updates[1], { "prototypeToken.texture.src": "tokens/top-down.webp" });
+  check("Token button is rendered", !!document.querySelector('#pc [data-action="editToken"]'), true);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

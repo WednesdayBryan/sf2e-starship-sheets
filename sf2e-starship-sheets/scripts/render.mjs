@@ -34,6 +34,13 @@ function actionRow(a, { station, stationName, helmerName, disabled }) {
   </li>`;
 }
 
+function portrait(vm) {
+  return `<div class="sss-portrait-box">
+    <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait" title="${vm.editable ? "Change portrait" : ""}">
+    ${vm.editable ? `<button type="button" class="sss-token-btn" data-action="editToken" title="Change token image"><i class="fa-solid fa-chess-pawn"></i> Token</button>` : ""}
+  </div>`;
+}
+
 function compromisedPips(n, editable) {
   return Array.from({ length: 10 }, (_, i) => {
     const v = i + 1;
@@ -88,7 +95,7 @@ export function renderPCSheet(vm) {
   return `
   <div class="sss-sheet sss-pc">
     <header class="sss-header">
-      <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait">
+      ${portrait(vm)}
       <div class="sss-title">
         <input type="text" name="name" value="${esc(vm.name)}" class="sss-name"${dis(editable)} placeholder="Starship name">
         <div class="sss-sub">
@@ -274,7 +281,7 @@ export function renderNPCSheet(vm) {
   return `
   <div class="sss-sheet sss-npc">
     <header class="sss-header">
-      <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait">
+      ${portrait(vm)}
       <div class="sss-title">
         <input type="text" name="name" value="${esc(vm.name)}" class="sss-name"${dis(editable)}>
         <div class="sss-sub">

@@ -122,6 +122,38 @@ async function rollCheck({ label, mod, speaker, dc = null, extra = "" }) {
   return roll.toMessage({ speaker, flavor: `<strong>${esc(label)}</strong> ${extra}${outcome}` });
 }
 
+/* ---------------------------------- images ---------------------------------- */
+
+const DEFAULT_ICONS = ["icons/svg/mystery-man.svg", "icons/svg/target.svg"];
+
+/** Open the file picker for the portrait ("img") or the token ("token"). */
+function pickImage(sheet, target) {
+  if (!sheet.isEditable) return;
+  const actor = sheet.document;
+  const current = target === "token" ? actor.prototypeToken.texture.src : actor.img;
+  const FP = foundry.applications.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
+  new FP({ type: "image", current, callback: (path) => setImage(actor, path, target) }).render(true);
+}
+
+/**
+ * A new portrait also becomes the token image while the token still shows the old portrait or a default icon,
+ * matching the system's own sheets. Linked tokens already on the current scene follow the token image.
+ */
+export async function setImage(actor, path, target) {
+  const tokenSrc = actor.prototypeToken.texture.src;
+  const update = {};
+  if (target === "token") update["prototypeToken.texture.src"] = path;
+  else {
+    update.img = path;
+    if (!tokenSrc || tokenSrc === actor.img || DEFAULT_ICONS.includes(tokenSrc)) update["prototypeToken.texture.src"] = path;
+  }
+  await actor.update(update, { [MODULE_ID]: true });
+
+  if (!update["prototypeToken.texture.src"] || !actor.prototypeToken.actorLink || !canvas?.scene) return;
+  const tokens = canvas.scene.tokens.filter((t) => t.actorId === actor.id && t.actorLink && t.isOwner).map((t) => ({ _id: t.id, "texture.src": path }));
+  if (tokens.length) await canvas.scene.updateEmbeddedDocuments("Token", tokens);
+}
+
 /* ---------------------------------- dialogs ---------------------------------- */
 
 async function numberDialog(title, fields) {
@@ -164,6 +196,7 @@ class StarshipSheetBase extends ActorSheetV2 {
     actions: {
       tab: StarshipSheetBase.#onTab,
       editImage: StarshipSheetBase.#onEditImage,
+      editToken: StarshipSheetBase.#onEditToken,
       setCompromised: StarshipSheetBase.#onSetCompromised,
       hullIntegrity: StarshipSheetBase.#onHullIntegrity,
       clearDestroyed: StarshipSheetBase.#onClearDestroyed,
@@ -239,9 +272,11 @@ class StarshipSheetBase extends ActorSheetV2 {
   }
 
   static #onEditImage() {
-    if (!this.isEditable) return;
-    const FP = foundry.applications.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
-    new FP({ type: "image", current: this.document.img, callback: (path) => this.document.update({ img: path }) }).browse();
+    return pickImage(this, "img");
+  }
+
+  static #onEditToken() {
+    return pickImage(this, "token");
   }
 
   static async #onSetCompromised(event, target) {

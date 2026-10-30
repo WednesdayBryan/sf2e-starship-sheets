@@ -2,11 +2,11 @@
   "id": "sf2e-starship-sheets",
   "title": "SF2e Starship Sheets",
   "description": "Player and NPC starship sheets for Starfinder Second Edition tactical starship combat (Tech Core). Starships are stored on the system's own vehicle and NPC actors, so disabling the module never breaks a world.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "authors": [{ "name": "Bryan Sims" }],
   "url": "https://github.com/WednesdayBryan/sf2e-starship-sheets",
   "manifest": "https://github.com/WednesdayBryan/sf2e-starship-sheets/releases/latest/download/module.json",
-  "download": "https://github.com/WednesdayBryan/sf2e-starship-sheets/releases/download/v0.1.2/module.zip",
+  "download": "https://github.com/WednesdayBryan/sf2e-starship-sheets/releases/download/v0.1.3/module.zip",
   "bugs": "https://github.com/WednesdayBryan/sf2e-starship-sheets/issues",
   "compatibility": {
     "minimum": "14",
