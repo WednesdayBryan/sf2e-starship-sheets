@@ -43,8 +43,8 @@ Give your players **Owner** permission on the player starship so they can use it
   - Chat reminds the caster which rank of spell slot to expend.
 - **Starship Weapon Crystal (solarian).** The gunnery's helmer uses their own solar armaments. Graviton or photon comes from the stellar attunement on their character sheet.
   - **Nova Weapon** shows the helmer's attunement and what it adds.
-  - **Nova Strike** uses the solar weapon's melee attack bonus against the targeted starship's AC, with the multiple attack penalty (−4/−8 if agile). Damage is the weapon's dice as d10s + Strength. Photon attunement adds fire damage equal to half the solarian's level, rounded up.
-  - **Nova Surge** uses the same numbers as Nova Strike, as one attack with no multiple attack penalty.
+  - **Nova Strike** rolls the solar weapon Strike from the solarian's own sheet, such as "Advanced Solar Weapon (Photon)", with its attack buttons. Damage is that Strike's own damage (crystals, Strength and photon fire included) with its weapon dice changed to d10s, for example 2d10 instead of 2d8.
+  - **Nova Surge** rolls the same Strike's first attack only, with no multiple attack penalty, and the same d10 damage.
   - A graviton Nova Strike or Surge hit gives the target −1 zone Speed until the end of its next turn.
   - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Damage is graviton 1d8 bludgeoning (range 2 zones) or photon 1d6 fire (range 4 zones), plus Strength.
   - On a Nova Blast critical hit, a graviton blast makes the target off-kilter with −1 zone Speed, and a photon blast gives it 1d6 persistent fire.
@@ -59,7 +59,8 @@ Give your players **Owner** permission on the player starship so they can use it
   - Taking damage while compromised adds 1 to compromised (2 on a critical hit). Compromised 10 destroys the ship.
   - **Restore HP** ends compromised and adds 1 to wrecked.
   - **Hull Integrity Check** rolls the flat check against DC 10 + compromised.
-- **Expansion bays and notes.**
+- **Expansion bays.** Each of the 4 bays has a dropdown of the Tech Core facilities (Data Center, Fabrication Lab, Holo Den, Medical Bay, Passenger Quarters, Science Lab, Crew Quarters, Lounge, Mess Bay), with a link to the chosen facility's benefits on Archives of Nethys.
+- **Notes.**
 
 ## NPC starship sheet
 

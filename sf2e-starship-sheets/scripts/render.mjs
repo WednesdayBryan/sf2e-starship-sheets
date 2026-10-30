@@ -1,8 +1,8 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { effectiveSpeed, novaBlastDamage, novaWeaponDamage, partsLabel } from "./logic.mjs";
-import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import { effectiveSpeed, novaBlastDamage, partsLabel } from "./logic.mjs";
+import { AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -54,13 +54,13 @@ function novaButtons(a, s) {
   if (a.id === 533 || a.id === 536) {
     const w = c.solarWeapon;
     if (!w) return `<span class="sss-hint">${esc(c.name)} has no solar weapon Strike</span>`;
-    const pens = a.id === 536 ? [0] : w.agile ? [0, -4, -8] : [0, -5, -10];
-    const damage = partsLabel(novaWeaponDamage(w, c.str, c.level, c.attunement));
-    return `${pens
-      .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaStrike" data-station="${i}" data-map="${mi}"${a.id === 536 ? ` data-surge="1"` : ""}${off}
-        title="${a.id === 536 ? "Nova Surge: no multiple attack penalty" : "Nova weapon Strike vs target's AC"}">${signed(w.attack + pen)}</button>`)
-      .join("")}
-      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}"${off}>${esc(damage)}</button>
+    const variants = (w.variants?.length ? w.variants : [signed(w.attack)]).slice(0, a.id === 536 ? 1 : 3);
+    return `<span class="sss-dim" title="Rolled from ${esc(c.name)}'s character sheet">${esc(w.label)}</span>
+      ${variants
+        .map((label, mi) => `<button type="button" class="sss-strike" data-action="novaStrike" data-station="${i}" data-map="${mi}"${a.id === 536 ? ` data-surge="1"` : ""}${off}
+        title="${a.id === 536 ? "Nova Surge: no multiple attack penalty" : `${esc(w.label)} Strike vs target's AC`}">${esc(label)}</button>`)
+        .join("")}
+      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}"${off} title="${esc(w.label)} damage with d10 dice">Damage ${w.dice}d10</button>
       <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
   }
   if (!c.solarFlare) return `<span class="sss-hint">${esc(c.name)} has no solar flare Strike</span>`;
@@ -239,15 +239,26 @@ export function renderPCSheet(vm) {
   </div>`;
 }
 
+/** The facility installed in a bay: its key, falling back to a facility typed by name in older versions. */
+export function bayKey(bay) {
+  if (bay?.key) return bay.key;
+  const name = String(bay?.name ?? "").trim().toLowerCase();
+  return Object.entries(EXPANSION_BAY_OPTIONS).find(([, o]) => o.name.toLowerCase() === name)?.[0] ?? "";
+}
+
 function baysTab({ ship, editable }) {
   return `<div class="sss-bays">
-    <p class="sss-hint">${link(EXPANSION_BAYS_URL, "Expansion bay options")} — record each installed facility and what it provides.</p>
+    <p class="sss-hint">${link(EXPANSION_BAYS_URL, "Expansion bays")} — choose the facility installed in each bay.</p>
     ${ship.bays
-      .map(
-        (b, i) => `<div class="sss-bay"><span class="sss-bay-n">${i + 1}</span>
-        <input type="text" name="ship.bays.${i}.name" value="${esc(b.name)}" placeholder="Facility"${dis(editable)}>
-        <input type="text" name="ship.bays.${i}.notes" value="${esc(b.notes)}" placeholder="Benefits"${dis(editable)}></div>`
-      )
+      .map((b, i) => {
+        const key = bayKey(b);
+        const facility = EXPANSION_BAY_OPTIONS[key];
+        return `<div class="sss-bay"><span class="sss-bay-n">${i + 1}</span>
+        <select name="ship.bays.${i}.key"${dis(editable)}>${opt("", "— Empty bay —", key)}${Object.entries(EXPANSION_BAY_OPTIONS)
+          .map(([k, o]) => opt(k, o.name, key))
+          .join("")}</select>
+        <span class="sss-bay-link">${facility ? link(facility.url, `${facility.name} benefits on AoN ↗`) : ""}</span></div>`;
+      })
       .join("")}
   </div>`;
 }

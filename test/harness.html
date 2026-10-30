@@ -42,7 +42,7 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
   gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", ranks: { simple: 2, martial: 1, advanced: 0 },
-    solarWeapon: { attack: 14, agile: false, dice: 2, type: "slashing" }, solarFlare: { attack: 12 } },
+    solarWeapon: { label: "Advanced Solar Weapon (Photon)", variants: ["+14", "+9", "+4"], attack: 14, dice: 2, type: "slashing" }, solarFlare: { attack: 12 } },
   scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
   mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
 };
@@ -242,12 +242,16 @@ try {
   await Object.getPrototypeOf(main.PCStarshipSheet).DEFAULT_OPTIONS.actions.sssTab.call(sheet, {}, document.querySelector('#pc [data-tab="bays"]'));
   check("Clicking Expansion Bays switches tab", [sheet._tab, rendered], ["bays", 1]);
   const tabHtml = (tab) => { const el = document.createElement("div"); el.innerHTML = renderPCSheet({ name: "x", img: "", editable: true, ship, derived: d, hp: { value: 1, max: 78 }, hpField: "h", crewOptions: [], tab }); return el; };
-  check("Bays tab shows 4 bays with Medical Bay", [tabHtml("bays").querySelectorAll(".sss-bay").length, tabHtml("bays").querySelector('[name="ship.bays.0.name"]').value], [4, "Medical Bay"]);
+  const bays = tabHtml("bays");
+  check("Bays: 4 dropdowns of 9 facilities + empty", [bays.querySelectorAll(".sss-bay select").length, bays.querySelector('[name="ship.bays.1.key"]').options.length], [4, 10]);
+  check("Bay typed as 'Medical Bay' becomes the Medical Bay choice with its AoN link", [bays.querySelector('[name="ship.bays.0.key"]').value, bays.querySelector(".sss-bay-link a")?.getAttribute("href")],
+    ["medical-bay", "https://2e.aonsrd.com/tactical-starship-combat/expansion-bays/4-medical-bay"]);
+  check("Empty bay has no link", bays.querySelectorAll(".sss-bay")[1].querySelector(".sss-bay-link a"), null);
   check("Notes tab shows the notes box", !!tabHtml("notes").querySelector('textarea[name="ship.notes"]'), true);
   check("Nova Weapon shows photon attunement", row("Nova Weapon").textContent.includes("Photon") && row("Nova Weapon").textContent.includes("+3 fire"), true);
   check("Nova Strike buttons from melee solar weapon", [...row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), ["+14", "+9", "+4"]);
-  check("Nova Strike damage: d10s + Str + photon fire", row("Nova Strike").querySelector('[data-action="novaDamage"]').textContent.trim(), "2d10+4 slashing + 3 fire");
-  check("Nova Surge: one attack, same damage", [[...row("Nova Surge").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), row("Nova Surge").querySelector('[data-action="novaDamage"]').textContent.trim()], [["+14"], "2d10+4 slashing + 3 fire"]);
+  check("Nova Strike names the solar weapon and uses d10 damage", [row("Nova Strike").textContent.includes("Advanced Solar Weapon (Photon)"), row("Nova Strike").querySelector('[data-action="novaDamage"]').textContent.trim()], [true, "Damage 2d10"]);
+  check("Nova Surge: one attack, same damage", [[...row("Nova Surge").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), row("Nova Surge").querySelector('[data-action="novaDamage"]').textContent.trim()], [["+14"], "Damage 2d10"]);
   check("Nova Blast buttons and photon damage", [[...row("Nova Blast").querySelectorAll('[data-action="novaBlast"]')].map((b) => b.textContent.trim()), row("Nova Blast").querySelector('[data-action="novaBlastDamage"]').textContent.trim()],
     [["+12", "+7", "+2"], "1d6+4 fire"]);
 
@@ -258,12 +262,18 @@ try {
   let nextDie = 15;
   globalThis.Roll = class { constructor(f, d) { this.formula = f; this.data = d; } async evaluate() { this.dice = [{ total: nextDie }]; this.total = nextDie + (this.data?.mod ?? 0); return this; } async toMessage(m) { strikeLog.push(m.flavor); } };
   globalThis.ChatMessage = { getSpeaker: () => ({}) };
-  globalThis.CONFIG = { Dice: { rolls: [] } };
+  const damageFormulas = [];
+  globalThis.CONFIG = { Dice: { rolls: [class DamageRoll { constructor(f) { damageFormulas.push(f); } async evaluate() {} async toMessage() {} }] } };
   const strikeLog = [];
+  let strikeDegree = 2;
+  // The system names this Strike after its crystals; no "solar-weapon" slug here, so it's found by name.
   const solarian = { name: "Grix", uuid: "gunner", level: 6, getRollOptions: () => ["stellar-attunement:graviton"], system: { abilities: { str: { mod: 4 } }, actions: [
-    { type: "strike", slug: "fist" },
-    { type: "strike", slug: "solar-weapon", totalModifier: 14, item: { system: { traits: { value: [] }, damage: { dice: 2, damageType: "slashing" } } } },
-    { type: "strike", slug: "solar-flare", totalModifier: 12 }
+    { type: "strike", slug: "fist", label: "Fist", totalModifier: 10 },
+    { type: "strike", slug: "advanced-solar-weapon", label: "Advanced Solar Weapon (Photon)", totalModifier: 14,
+      item: { system: { traits: { value: [] }, runes: { striking: 1 }, damage: { dice: 1, die: "d8", damageType: "slashing" } } },
+      variants: [0, 1, 2].map((n) => ({ label: `v${n}`, roll: async () => { strikeLog.push(`weapon v${n}`); return { degreeOfSuccess: strikeDegree }; } })),
+      damage: async (p) => (p.getFormula ? "{(2d8 + 7)[slashing]}" : null), critical: async (p) => (p.getFormula ? "{(2 * (2d8 + 7))[slashing]}" : null) },
+    { type: "strike", slug: "solar-flare", label: "Solar Flare", totalModifier: 12 }
   ] } };
   const targetUpdates = [];
   const targetShip = { type: "npc", name: "Raider", uuid: "raider", isOwner: true, attributes: { ac: { value: 20 } }, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", effects: [] } } },
@@ -272,15 +282,19 @@ try {
   globalThis.fromUuidSync = (uuid) => (uuid === "gunner" ? solarian : uuid === "mystic" ? mystic : null);
   globalThis.foundry.utils.randomID = () => "id1";
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')[1]);
-  check("Nova Strike MAP -5 hits AC 20 (15+14-5=24)", strikeLog[0].includes("Nova Strike (MAP -5)") && strikeLog[0].includes("Success"), true);
+  check("Nova Strike rolls the solar weapon Strike's 2nd attack", strikeLog[0], "weapon v1");
   check("Graviton hit slows the target", targetUpdates[0]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => e.speed), [-1]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"]'));
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"][data-critical]'));
+  check("Nova damage is the Strike's own formula with d10 dice", damageFormulas, ["{(2d10 + 7)[slashing]}", "{(2 * (2d10 + 7))[slashing]}"]);
   nextDie = 20;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
   check("Graviton Nova Blast crit: off-kilter and slowed", targetUpdates[1]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => [e.offKilter, e.speed]), [[true, -1]]);
-  nextDie = 2;
+  strikeDegree = 1;
   targetUpdates.length = 0;
+  strikeLog.length = 0;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Surge").querySelector('[data-action="novaStrike"]'));
-  check("Nova Surge has no MAP and a miss applies nothing", [strikeLog.at(-1).includes("Nova Surge") && !strikeLog.at(-1).includes("MAP"), targetUpdates.length], [true, 0]);
+  check("Nova Surge rolls the first attack (no MAP); a miss applies nothing", [strikeLog[0], targetUpdates.length], ["weapon v0", 0]);
   check("Effects show on the NPC sheet", (() => { const el = document.createElement("div"); el.innerHTML = (window.__renderNPC)({ effects: [{ label: "Off-kilter (test)", speed: -1 }] }); return el.textContent.includes("Off-kilter (test)") && el.textContent.includes("(now 3)"); })(), true);
   check("Spell attack rolls caster's spellcasting vs target AC 20 with MAP -5", { label: spellRolls[0].label, dc: spellRolls[0].dc, map: spellRolls[0].modifiers?.[0]?.modifier },
     { label: "Cosmic Cannon: spell attack (MAP -5)", dc: { value: 20, label: "Raider's AC" }, map: -5 });

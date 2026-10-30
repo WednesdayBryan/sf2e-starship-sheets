@@ -321,5 +321,18 @@ export const NPC_STATIONS = {
 export const STARSHIP_IMMUNITIES =
   "bleed, death effects, disease, doomed, drained, fatigued, paralyzed, poison, sickened, spirit, unconscious, vitality, void";
 
+/** Expansion bay facilities (Tech Core). */
+export const EXPANSION_BAY_OPTIONS = {
+  "data-center": { name: "Data Center", url: "tactical-starship-combat/expansion-bays/1-data-center" },
+  "fabrication-lab": { name: "Fabrication Lab", url: "tactical-starship-combat/expansion-bays/2-fabrication-lab" },
+  "holo-den": { name: "Holo Den", url: "tactical-starship-combat/expansion-bays/3-holo-den" },
+  "medical-bay": { name: "Medical Bay", url: "tactical-starship-combat/expansion-bays/4-medical-bay" },
+  "passenger-quarters": { name: "Passenger Quarters", url: "tactical-starship-combat/expansion-bays/5-passenger-quarters" },
+  "science-lab": { name: "Science Lab", url: "tactical-starship-combat/expansion-bays/6-science-lab" },
+  "crew-quarters": { name: "Crew Quarters", url: "tactical-starship-combat/expansion-bays/7-crew-quarters" },
+  lounge: { name: "Lounge", url: "tactical-starship-combat/expansion-bays/8-lounge" },
+  "mess-bay": { name: "Mess Bay", url: "tactical-starship-combat/expansion-bays/9-mess-bay" }
+};
+
 export const RULES_URL = "rules/1329-tactical-starship-combat";
 export const EXPANSION_BAYS_URL = "tactical-starship-combat/expansion-bays";

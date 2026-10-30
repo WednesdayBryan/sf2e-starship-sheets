@@ -171,7 +171,7 @@
 
 /* bays */
 .sss-bays { display: flex; flex-direction: column; gap: 6px; }
-.sss-bay { display: grid; grid-template-columns: 24px 1fr 2fr; gap: 6px; align-items: center; }
+.sss-bay { display: grid; grid-template-columns: 24px 220px 1fr; gap: 6px; align-items: center; }
 .sss-bay-n { font-weight: 800; color: var(--sss-accent); text-align: center; }
 
 /* NPC */

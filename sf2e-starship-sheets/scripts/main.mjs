@@ -3,7 +3,7 @@
  * Player starships are system `vehicle` actors and NPC starships are system `npc` actors; all starship data is
  * stored in flags, so disabling this module never leaves the world with actors it can't load.
  */
-import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
+import { ACTIONS, AON, EXPANSION_BAY_OPTIONS, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, ventPowerDice, vehicleSync
@@ -49,11 +49,47 @@ function stellarAttunement(actor) {
 /** The solarian's solar weapon and solar flare Strikes (granted by the system while attuned). */
 function solarStrikes(actor) {
   const strikes = actor?.system?.actions ?? [];
-  const find = (slug) => {
-    const index = strikes.findIndex((s) => s.type === "strike" && (s.slug === slug || s.item?.slug === slug));
-    return index < 0 ? null : { index, strike: strikes[index] };
+  // The system names the solar weapon Strike after its crystals, e.g. "Advanced Solar Weapon (Photon)".
+  const find = (slug, pattern) => {
+    const matches = strikes
+      .map((strike, index) => ({ strike, index }))
+      .filter(({ strike: s }) => s.type === "strike" && (s.slug === slug || s.item?.slug === slug || pattern.test(s.label ?? s.item?.name ?? "")));
+    return matches.sort((a, b) => (b.strike.totalModifier ?? 0) - (a.strike.totalModifier ?? 0))[0] ?? null;
   };
-  return { weapon: find("solar-weapon"), flare: find("solar-flare") };
+  return { weapon: find("solar-weapon", /solar weapon/i), flare: find("solar-flare", /solar flare/i) };
+}
+
+/** Number of weapon damage dice, including a striking crystal. */
+function strikeDice(strike) {
+  const system = strike?.item?.system;
+  return Math.max(system?.damage?.dice ?? 1, 1 + (Number(system?.runes?.striking) || 0));
+}
+
+/**
+ * Nova weapon damage: the solar weapon Strike's own damage (crystals, Strength, photon fire and all) with its
+ * weapon dice made d10s. Falls back to the module's own formula if the system's formula isn't available.
+ */
+async function rollNovaWeaponDamage(info, strike, { event, critical, speaker }) {
+  const method = critical ? strike.critical : strike.damage;
+  let formula = null;
+  try {
+    formula = await method?.call(strike, { event, getFormula: true });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Couldn't read the solar weapon's damage formula`, err);
+  }
+  const flavor = `<strong>Nova weapon</strong> (${esc(strike.label ?? "solar weapon")}) ${critical ? "critical " : ""}damage, d10 dice`;
+  const DamageRoll = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll");
+  if (typeof formula === "string" && DamageRoll) {
+    const novaFormula = formula.replace(/(\d+)d(?:4|6|8|10|12)\b/, "$1d10");
+    try {
+      const roll = new DamageRoll(novaFormula);
+      await roll.evaluate();
+      return roll.toMessage({ speaker, flavor });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Nova damage from the system formula failed, using the module's formula`, err);
+    }
+  }
+  return rollDamage({ parts: novaWeaponDamage(info.solarWeapon, info.str, info.level, info.attunement), critical, speaker, flavor });
 }
 
 function crewInfo(uuid) {
@@ -71,9 +107,10 @@ function crewInfo(uuid) {
     attunement: stellarAttunement(a),
     solarWeapon: weapon
       ? {
+          label: weapon.label ?? weapon.item?.name ?? "Solar Weapon",
+          variants: (weapon.variants ?? []).map((v) => v.label),
           attack: weapon.totalModifier,
-          agile: (weaponItem?.traits?.value ?? []).includes("agile"),
-          dice: weaponItem?.damage?.dice ?? 1,
+          dice: strikeDice(weapon),
           type: weaponItem?.damage?.damageType ?? "bludgeoning"
         }
       : null,
@@ -515,6 +552,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
 
   normalizeShip(ship, before, update) {
     ship.level = Math.clamp(Number(ship.level) || 1, 1, 20);
+    for (const bay of ship.bays) if ("key" in bay) bay.name = EXPANSION_BAY_OPTIONS[bay.key]?.name ?? "";
     if (!(ship.frame in FRAMES)) ship.frame = "explorer";
     ship.acCircumstance = Number(ship.acCircumstance) || 0;
     ship.wrecked = Math.max(0, Number(ship.wrecked) || 0);
@@ -673,41 +711,29 @@ export class PCStarshipSheet extends StarshipSheetBase {
       ui.notifications.warn(`${actor.name} isn't graviton- or photon-attuned.`);
       return null;
     }
-    return { actor, info, speaker: ChatMessage.getSpeaker({ actor }) };
+    return { actor, info, strikes: solarStrikes(actor), speaker: ChatMessage.getSpeaker({ actor }) };
   }
 
   /**
-   * Nova Strike / Nova Surge: the solar weapon's melee attack bonus against the targeted starship's AC.
-   * Nova Surge is a single attack with no multiple attack penalty. A graviton hit slows the target.
+   * Nova Strike / Nova Surge: the solarian's solar weapon Strike from their own sheet (e.g. "Advanced Solar
+   * Weapon (Photon)"), rolled by the system against the targeted starship. Nova Surge is its first attack only,
+   * with no multiple attack penalty. A graviton hit slows the target.
    */
   static async #onNovaStrike(event, target) {
     const s = this.#solarian(target, "weapon");
     if (!s) return;
-    const w = s.info.solarWeapon;
-    const surge = target.dataset.surge === "1";
-    const mi = surge ? 0 : Number(target.dataset.map) || 0;
-    const penalty = (w.agile ? [0, -4, -8] : [0, -5, -10])[mi];
-    const { degree } = await rollCheck({
-      label: `${surge ? "Nova Surge" : "Nova Strike"}${mi ? ` (MAP ${penalty})` : ""}`,
-      mod: w.attack + penalty,
-      speaker: s.speaker,
-      dc: targetAC(),
-      extra: s.info.attunement ? `<div class="sss-traits-list"><span class="sss-trait">${s.info.attunement}</span></div>` : ""
-    });
-    await applyEffectsToTarget(novaEffects("weapon", s.info.attunement, degree ?? -1));
+    const strike = s.strikes.weapon.strike;
+    const mi = target.dataset.surge === "1" ? 0 : Number(target.dataset.map) || 0;
+    const roll = await strike.variants?.[mi]?.roll({ event });
+    const degree = roll?.degreeOfSuccess ?? roll?.options?.degreeOfSuccess ?? null;
+    await applyEffectsToTarget(novaEffects("weapon", s.info.attunement, Number.isFinite(degree) ? degree : -1));
   }
 
-  /** Nova weapon damage: d10 dice plus Strength, and photon fire when the helmer is photon-attuned. */
+  /** Nova weapon damage: the solar weapon's own damage with d10 dice. */
   static async #onNovaDamage(event, target) {
     const s = this.#solarian(target, "weapon");
     if (!s) return;
-    const critical = target.dataset.critical === "1";
-    await rollDamage({
-      parts: novaWeaponDamage(s.info.solarWeapon, s.info.str, s.info.level, s.info.attunement),
-      critical,
-      speaker: s.speaker,
-      flavor: `<strong>Nova weapon</strong> ${critical ? "critical " : ""}damage${s.info.attunement === "photon" ? " (includes photon fire)" : ""}`
-    });
+    await rollNovaWeaponDamage(s.info, s.strikes.weapon.strike, { event, critical: target.dataset.critical === "1", speaker: s.speaker });
   }
 
   /** Nova Blast: the solar flare's attack bonus against the targeted starship's AC; critical effects by attunement. */

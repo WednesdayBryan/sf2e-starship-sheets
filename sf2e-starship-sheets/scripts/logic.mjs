@@ -30,7 +30,7 @@ export function defaultPCShip(frameKey = "explorer", level = 1) {
     resistances: "",
     notes: "",
     effects: [],
-    bays: Array.from({ length: EXPANSION_BAYS }, () => ({ name: "", notes: "" })),
+    bays: Array.from({ length: EXPANSION_BAYS }, () => ({ key: "", name: "" })),
     stations: [
       station("pilot", true, frame.defaults.pilot),
       station("generator", true, frame.defaults.generator),
