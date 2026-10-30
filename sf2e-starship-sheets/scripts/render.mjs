@@ -1,0 +1,387 @@
+/**
+ * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
+ */
+import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+
+export const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+export const signed = (n) => (n === null || n === undefined ? "—" : n >= 0 ? `+${n}` : `${n}`);
+const link = (path, text) => `<a class="sss-link" href="${AON}${esc(path)}" target="_blank" rel="noopener" title="Open on Archives of Nethys">${esc(text)}</a>`;
+const opt = (value, label, selected) => `<option value="${esc(value)}"${String(value) === String(selected ?? "") ? " selected" : ""}>${esc(label)}</option>`;
+const dis = (editable) => (editable ? "" : " disabled");
+
+/** Action cost glyph, using the system's action font. */
+export function costGlyph(cost) {
+  const g = (c) => `<span class="action-glyph">${{ 1: "1", 2: "2", 3: "3", r: "R", f: "F" }[c] ?? c}</span>`;
+  if (cost === "1-2") return `${g(1)}–${g(2)}`;
+  if (cost === "1-3") return `${g(1)}–${g(3)}`;
+  if (cost === "r/1") return `${g("r")}/${g(1)}`;
+  if (cost === "passive" || cost === null || cost === undefined) return "";
+  return g(cost);
+}
+
+function actionRow(a, { station, stationName, helmerName, disabled }) {
+  const extra =
+    a.id === 588 ? `<button type="button" data-action="generateShields" data-station="${station}" title="Roll and add Shield Points">Roll</button>` :
+    a.id === 590 ? `<button type="button" data-action="ventPower" data-station="${station}" title="Roll Vent Power damage">Roll</button>` : "";
+  return `<li class="sss-action${disabled ? " is-disabled" : ""}">
+    <button type="button" class="sss-action-name" data-action="postAction" data-action-id="${a.id}" data-station="${station}" title="Post to chat${helmerName ? ` as ${esc(helmerName)}` : ""}">
+      ${costGlyph(a.cost)} ${esc(a.name)}</button>
+    ${a.freq ? `<span class="sss-freq">${esc(a.freq)}</span>` : ""}
+    ${a.source && a.source !== "Universal" && a.source !== stationName ? `<span class="sss-src">${esc(a.source)}</span>` : ""}
+    ${extra}
+    ${link(a.url, "↗")}
+  </li>`;
+}
+
+function compromisedPips(n, editable) {
+  return Array.from({ length: 10 }, (_, i) => {
+    const v = i + 1;
+    return `<button type="button" class="sss-pip${v <= n ? " is-on" : ""}" data-action="setCompromised" data-value="${v === n ? v - 1 : v}"${dis(editable)} title="Compromised ${v}"></button>`;
+  }).join("");
+}
+
+function hullBlock(vm) {
+  const { ship, editable } = vm;
+  const d = vm.derived ?? vm;
+  return `
+  <section class="sss-card sss-hull">
+    <div class="sss-meter">
+      <label>Hull Points</label>
+      <div class="sss-big"><input type="number" name="${vm.hpField}" value="${vm.hp.value}" min="0" max="${vm.hp.max}"${dis(editable)}> <span>/ ${vm.hp.max}</span></div>
+      <div class="sss-bar"><span style="width:${vm.hp.max ? Math.round((100 * vm.hp.value) / vm.hp.max) : 0}%"></span></div>
+    </div>
+    <div class="sss-meter sss-shields">
+      <label>Shield Points</label>
+      <div class="sss-big"><input type="number" name="ship.sp" data-dtype="Number" value="${ship.sp}" min="0" max="${vm.spMax}"${dis(editable)}> <span>/ ${vm.spMax}</span></div>
+      <div class="sss-bar"><span style="width:${vm.spMax ? Math.round((100 * ship.sp) / vm.spMax) : 0}%"></span></div>
+    </div>
+    <div class="sss-buttons">
+      <button type="button" data-action="damage"${dis(editable)}><i class="fa-solid fa-burst"></i> Damage</button>
+      <button type="button" data-action="repairHull"${dis(editable)}><i class="fa-solid fa-screwdriver-wrench"></i> Restore HP</button>
+      <button type="button" data-action="restoreShields"${dis(editable)}><i class="fa-solid fa-shield-halved"></i> Restore SP</button>
+    </div>
+    <div class="sss-condition">
+      <label>Compromised</label>
+      <div class="sss-pips">${compromisedPips(ship.compromised, editable)}</div>
+      ${ship.compromised > 0 ? `<button type="button" data-action="hullIntegrity"${dis(editable)}>Hull Integrity Check (DC ${10 + ship.compromised})</button>` : ""}
+    </div>
+    <div class="sss-row">
+      <label>Wrecked <input type="number" class="sss-small" name="ship.wrecked" data-dtype="Number" value="${ship.wrecked}" min="0"${dis(editable)}></label>
+      ${ship.destroyed ? `<span class="sss-destroyed">DESTROYED</span> <button type="button" data-action="clearDestroyed"${dis(editable)}>Clear</button>` : ""}
+    </div>
+    ${d.fortify !== undefined ? `<div class="sss-row"><label>Fortify <input type="number" class="sss-small" name="ship.fortify" data-dtype="Number" value="${ship.fortify}"${dis(editable)}></label>
+      <label>Max SP <input type="number" class="sss-small" name="ship.spMax" data-dtype="Number" value="${ship.spMax}"${dis(editable)}></label></div>` : ""}
+  </section>`;
+}
+
+/* ---------------------------------- PC ---------------------------------- */
+
+export function renderPCSheet(vm) {
+  const { ship, derived: d, editable } = vm;
+  const tab = vm.tab ?? "stations";
+  const save = (key, label) => {
+    const s = d.saves[key];
+    return `<button type="button" class="sss-save" data-action="rollSave" data-save="${key}" title="Frame ${signed(s.base)}${s.item ? `, helmed ${signed(s.item)} item` : ""}">
+      <span class="sss-save-label">${label}</span><span class="sss-save-mod">${signed(s.total)}</span>${s.item ? `<span class="sss-helmed">helmed ${signed(s.item)}</span>` : ""}</button>`;
+  };
+  return `
+  <div class="sss-sheet sss-pc">
+    <header class="sss-header">
+      <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait">
+      <div class="sss-title">
+        <input type="text" name="name" value="${esc(vm.name)}" class="sss-name"${dis(editable)} placeholder="Starship name">
+        <div class="sss-sub">
+          <label>Frame <select name="ship.frame"${dis(editable)}>${Object.entries(FRAMES).map(([k, f]) => opt(k, f.name, ship.frame)).join("")}</select></label>
+          <label>Level <select name="ship.level" data-dtype="Number"${dis(editable)}>${Array.from({ length: 20 }, (_, i) => opt(i + 1, i + 1, d.level)).join("")}</select></label>
+          <span class="sss-tag">Medium</span>
+          <input type="text" name="ship.traits" value="${esc(ship.traits)}" placeholder="Traits"${dis(editable)} class="sss-traits">
+          ${link(d.frame.url, "Frame")} ${link(RULES_URL, "Rules")}
+        </div>
+      </div>
+    </header>
+
+    ${d.warnings.length ? `<ul class="sss-warnings">${d.warnings.map((w) => `<li><i class="fa-solid fa-triangle-exclamation"></i> ${esc(w)}</li>`).join("")}</ul>` : ""}
+
+    <div class="sss-top">
+      <section class="sss-card sss-defenses">
+        <div class="sss-ac">
+          <label>Armor Class</label>
+          <div class="sss-ac-value" title="Frame ${d.ac.frame}${d.ac.pilotDC !== null ? `, pilot's Piloting DC ${d.ac.pilotDC}` : ""}${d.ac.item ? `, helmed +${d.ac.item} item` : ""}${d.ac.circumstance ? `, +${d.ac.circumstance} circumstance` : ""}">${d.ac.total}</div>
+          <div class="sss-ac-parts">
+            <span>Frame ${d.ac.frame}</span>
+            <span>Pilot DC ${d.ac.pilotDC ?? "—"}</span>
+            ${d.ac.item ? `<span>Helmed +${d.ac.item}</span>` : ""}
+          </div>
+          <select name="ship.acCircumstance" data-dtype="Number"${dis(editable)} title="Circumstance bonus to AC">
+            ${opt(0, "No Evade/Cover", ship.acCircumstance)}${opt(1, "Evade +1", ship.acCircumstance)}${opt(2, "Evade +2", ship.acCircumstance)}${opt(4, "Cover +4", ship.acCircumstance)}
+          </select>
+        </div>
+        <div class="sss-saves">${save("fortitude", "Fort")}${save("reflex", "Ref")}${save("will", "Will")}</div>
+        <div class="sss-movement">
+          <div><label>Speed</label><strong>${d.speed}</strong> zones</div>
+          <div title="Frame ${d.sensor.base}${d.sensor.bonus ? ` + scanners ${d.sensor.bonus}` : ""}"><label>Sensor Range</label><strong>${d.sensor.total}</strong> zones</div>
+          <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}" placeholder="e.g. east"${dis(editable)}></div>
+        </div>
+        <div class="sss-iwr">
+          <div><label>Immunities</label> <span>${esc(STARSHIP_IMMUNITIES)}</span></div>
+          <div><label>Resistances</label> <input type="text" name="ship.resistances" value="${esc(ship.resistances)}"${dis(editable)}></div>
+        </div>
+      </section>
+      ${hullBlock({ ...vm, spMax: d.spMax })}
+    </div>
+
+    <nav class="sss-tabs">
+      ${[["stations", "Battle Stations"], ["bays", "Expansion Bays"], ["notes", "Notes"]]
+        .map(([k, l]) => `<button type="button" data-action="tab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
+        .join("")}
+    </nav>
+
+    <div class="sss-tab-body">
+      ${tab === "stations" ? `<div class="sss-stations">${d.stations.map((s) => stationCard(s, vm)).join("")}</div>` : ""}
+      ${tab === "bays" ? baysTab(vm) : ""}
+      ${tab === "notes" ? `<textarea name="ship.notes" class="sss-notes"${dis(editable)} placeholder="Crew, cargo, history…">${esc(ship.notes)}</textarea>` : ""}
+    </div>
+  </div>`;
+}
+
+function baysTab({ ship, editable }) {
+  return `<div class="sss-bays">
+    <p class="sss-hint">${link(EXPANSION_BAYS_URL, "Expansion bay options")} — record each installed facility and what it provides.</p>
+    ${ship.bays
+      .map(
+        (b, i) => `<div class="sss-bay"><span class="sss-bay-n">${i + 1}</span>
+        <input type="text" name="ship.bays.${i}.name" value="${esc(b.name)}" placeholder="Facility"${dis(editable)}>
+        <input type="text" name="ship.bays.${i}.notes" value="${esc(b.notes)}" placeholder="Benefits"${dis(editable)}></div>`
+      )
+      .join("")}
+  </div>`;
+}
+
+function stationCard(s, vm) {
+  const { editable } = vm;
+  const i = s.index;
+  const typeSelect = s.fixed
+    ? `<strong>${esc(s.def?.name ?? "")}</strong>`
+    : `<select name="ship.stations.${i}.type"${dis(editable)}>${opt("", "— Empty slot —", s.type)}${["gunnery", "scanners", "conduit", "drone", "pilot", "generator"]
+        .map((k) => opt(k, STATIONS[k].name, s.type))
+        .join("")}</select>`;
+  if (s.empty) return `<article class="sss-station is-empty"><header>${typeSelect}<span class="sss-slot">Slot ${i + 1}</span></header></article>`;
+
+  const crewSelect = `<select name="ship.stations.${i}.helmer"${dis(editable)} title="Crew member helming this station">
+    ${opt("", "— Unhelmed —", s.helmer)}${vm.crewOptions.map((c) => opt(c.uuid, c.name, s.helmer)).join("")}
+    ${s.helmer && !vm.crewOptions.some((c) => c.uuid === s.helmer) ? opt(s.helmer, s.helmerData?.name ?? "Unknown", s.helmer) : ""}</select>`;
+  const gradeSelect = `<select name="ship.stations.${i}.gradeOverride"${dis(editable)} title="Grade (Auto follows starship level)">
+    ${opt("", `Auto (${GRADE_LABELS[s.autoGrade]})`, s.gradeOverride)}${GRADE_LABELS.map((g, gi) => opt(gi, g, s.gradeOverride)).join("")}</select>`;
+
+  const bonusBits = [];
+  if (s.type === "pilot") bonusBits.push(`Helmed: AC +${s.bonuses.ac}, Reflex +${s.bonuses.ref}; AC uses pilot's Piloting DC if higher`);
+  if (s.type === "generator") bonusBits.push(`Helmed: Fortitude +${s.bonuses.fort}`);
+  if (s.type === "scanners") bonusBits.push(`Sensor range +${s.bonuses.sensor}; helmed: Will +${s.bonuses.will}`);
+  if (s.type === "conduit") bonusBits.push(`Helmed: Will +${s.bonuses.will}; casters use starship spells`);
+  if (s.type === "gunnery") bonusBits.push(`Weapons: ${s.bonuses.damageDice} damage ${s.bonuses.damageDice > 1 ? "dice" : "die"}, tracking +${s.bonuses.tracking}`);
+  if (s.type === "drone") bonusBits.push(`Drones: ${s.bonuses.drones}`);
+
+  const usableUpgrades = Object.entries(UPGRADES).filter(([k, u]) => u.station === s.type && !s.upgrades.includes(k) && k !== s.defaultUpgrade);
+  const upgrades = `<div class="sss-upgrades">
+    <label>Upgrades <span class="sss-count">${s.upgrades.length}/${s.upgradesAllowed}</span></label>
+    <ul>${s.upgradeViews
+      .map(
+        (u) => `<li>${u.url ? link(u.url, u.name) : esc(u.name)}${u.isDefault ? ` <span class="sss-tag">frame default</span>` : editable ? ` <button type="button" class="sss-x" data-action="removeUpgrade" data-station="${i}" data-index="${u.index}" title="Remove">✕</button>` : ""}</li>`
+      )
+      .join("")}</ul>
+    ${editable && usableUpgrades.length ? `<select data-action-change="addUpgrade" data-station="${i}"><option value="">+ Add upgrade…</option>${usableUpgrades.map(([k, u]) => opt(k, `${u.name} (lvl ${u.level})`, "")).join("")}</select>` : ""}
+  </div>`;
+
+  const weapons = s.type === "gunnery" ? weaponsBlock(s, vm) : "";
+  const rowOpts = { station: i, stationName: s.def.name, helmerName: s.helmerData?.name, disabled: s.malfunctioning };
+  const actions = `<ul class="sss-actions">${s.actions
+    .filter((a) => a.id !== 17 && a.id !== 19)
+    .map((a) => actionRow(a, rowOpts))
+    .join("")}</ul>`;
+  const spells = s.spells ? `<div class="sss-sub-list"><label>Spell repository</label><ul class="sss-actions">${s.spells.map((a) => actionRow(a, rowOpts)).join("")}</ul></div>` : "";
+  const drones = s.drones
+    ? `<div class="sss-sub-list"><label>Drone actions (while that drone is deployed)</label>${s.drones
+        .map((dr) => `<div class="sss-drone">${link(dr.url, dr.name)}<ul class="sss-actions">${dr.actionList.map((a) => actionRow(a, rowOpts)).join("")}</ul></div>`)
+        .join("")}</div>`
+    : "";
+
+  return `<article class="sss-station sss-${s.type}${s.malfunctioning ? " is-malfunctioning" : ""}">
+    <header>
+      ${typeSelect}
+      <span class="sss-slot">${s.fixed ? "Default" : `Slot ${i + 1}`}</span>
+      ${link(s.def.url, "↗")}
+    </header>
+    <div class="sss-station-controls">
+      ${gradeSelect}
+      ${crewSelect}
+      <label class="sss-malf" title="Malfunctioning: the helmer can't use station actions but keeps passive benefits">
+        <input type="checkbox" name="ship.stations.${i}.malfunctioning"${s.malfunctioning ? " checked" : ""}${dis(editable)}> Malfunctioning</label>
+    </div>
+    <p class="sss-bonus">${esc(bonusBits.join(" · "))}</p>
+    ${weapons}
+    ${upgrades}
+    ${actions}
+    ${spells}
+    ${drones}
+  </article>`;
+}
+
+function weaponsBlock(s, vm) {
+  const { editable } = vm;
+  const i = s.index;
+  const slots = s.upgrades.includes("secondary-armaments") ? 2 : 1;
+  const canAdd = editable && s.weapons.length < slots;
+  const rows = s.weaponsView
+    .map((w) => {
+      if (w.missing) return `<li class="sss-weapon">${esc(w.name)} <button type="button" class="sss-x" data-action="removeWeapon" data-station="${i}" data-index="${w.index}">✕</button></li>`;
+      const strikes = w.attack === null
+        ? `<span class="sss-hint">Assign a helmer or set an attack bonus</span>`
+        : w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="strike" data-station="${i}" data-weapon="${w.index}" data-map="${mi}"${s.malfunctioning ? " disabled" : ""}>${signed(w.attack + pen)}</button>`).join("");
+      return `<li class="sss-weapon${w.active ? " is-active" : ""}">
+        <div class="sss-weapon-head">
+          ${slots > 1 ? `<input type="radio" name="ship.stations.${i}.activeWeapon" data-dtype="Number" value="${w.index}"${w.active ? " checked" : ""}${dis(editable)} title="Active weapon">` : ""}
+          ${link(w.url, w.name)} <span class="sss-dim">${esc(w.category)} · ${w.range} zones</span>
+          ${editable ? `<button type="button" class="sss-x" data-action="removeWeapon" data-station="${i}" data-index="${w.index}" title="Remove">✕</button>` : ""}
+        </div>
+        <div class="sss-weapon-roll">
+          ${strikes}
+          <button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}">${esc(w.formula)} ${esc(w.type)}</button>
+          <button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}" data-critical="1">Crit</button>
+          ${w.area ? `<button type="button" data-action="postAction" data-action-id="17" data-station="${i}">Area Fire</button>` : ""}
+          ${w.automatic ? `<button type="button" data-action="postAction" data-action-id="19" data-station="${i}">Auto-Fire</button>` : ""}
+        </div>
+        <div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}${w.tracking ? `<span class="sss-trait">Tracking +${w.tracking}</span>` : ""}</div>
+      </li>`;
+    })
+    .join("");
+  return `<div class="sss-weapons">
+    <label>Weapons <span class="sss-count">${s.weapons.length}/${slots}</span>
+      <span class="sss-override" title="Use this attack bonus instead of the helmer's (tracking is added)">Attack override
+        <input type="number" class="sss-small" name="ship.stations.${i}.attackOverride" value="${s.attackOverride ?? ""}"${dis(editable)}></span></label>
+    <ul>${rows}</ul>
+    ${canAdd ? `<select data-action-change="addWeapon" data-station="${i}"><option value="">+ Install weapon…</option>${Object.entries(WEAPONS).map(([k, w]) => opt(k, `${w.name} (${w.category})`, "")).join("")}</select>` : ""}
+  </div>`;
+}
+
+/* ---------------------------------- NPC ---------------------------------- */
+
+export function renderNPCSheet(vm) {
+  const { ship, editable } = vm;
+  const tab = vm.tab ?? "combat";
+  const stat = (label, value, action, data = "") =>
+    `<button type="button" class="sss-save" data-action="${action}" ${data}><span class="sss-save-label">${label}</span><span class="sss-save-mod">${value}</span></button>`;
+  return `
+  <div class="sss-sheet sss-npc">
+    <header class="sss-header">
+      <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait">
+      <div class="sss-title">
+        <input type="text" name="name" value="${esc(vm.name)}" class="sss-name"${dis(editable)}>
+        <div class="sss-sub">
+          <span class="sss-tag">Starship ${vm.level}</span>
+          <span class="sss-tag">${esc(vm.size)}</span>
+          ${vm.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}
+          ${vm.isGM ? `<button type="button" data-action="openSystemSheet" title="Edit strikes, actions, skills and stats in the system's NPC sheet"><i class="fa-solid fa-pen-to-square"></i> Edit stat block</button>` : ""}
+        </div>
+      </div>
+    </header>
+
+    <div class="sss-top">
+      <section class="sss-card sss-defenses">
+        <div class="sss-ac"><label>Armor Class</label><div class="sss-ac-value">${vm.ac}</div>
+          ${vm.pilotingDC ? `<div class="sss-ac-parts"><span>Piloting DC ${vm.pilotingDC}</span></div>` : ""}</div>
+        <div class="sss-saves">
+          ${stat("Fort", signed(vm.saves.fortitude), "rollSave", 'data-save="fortitude"')}
+          ${stat("Ref", signed(vm.saves.reflex), "rollSave", 'data-save="reflex"')}
+          ${stat("Will", signed(vm.saves.will), "rollSave", 'data-save="will"')}
+        </div>
+        <div class="sss-movement">
+          <div><label>Speed</label><input type="number" class="sss-small" name="ship.speed" data-dtype="Number" value="${ship.speed}"${dis(editable)}> zones</div>
+          <div><label>Sensor Range</label><input type="number" class="sss-small" name="ship.sensor" data-dtype="Number" value="${ship.sensor}"${dis(editable)}> zones</div>
+          <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}"${dis(editable)}></div>
+        </div>
+        <div class="sss-checks">
+          ${stat("Perception", signed(vm.perception), "rollPerception")}
+          ${vm.skills.map((sk) => stat(esc(sk.label), signed(sk.mod), "rollSkill", `data-skill="${esc(sk.slug)}"`)).join("")}
+        </div>
+        <div class="sss-abilities">${vm.abilities.map((a) => `<span><b>${a.label}</b> ${signed(a.mod)}</span>`).join("")}</div>
+        <div class="sss-iwr">
+          ${vm.immunities ? `<div><label>Immunities</label> <span>${esc(vm.immunities)}</span></div>` : ""}
+          ${vm.resistances ? `<div><label>Resistances</label> <span>${esc(vm.resistances)}</span></div>` : ""}
+          ${vm.weaknesses ? `<div><label>Weaknesses</label> <span>${esc(vm.weaknesses)}</span></div>` : ""}
+        </div>
+      </section>
+      ${hullBlock({ ...vm, spMax: ship.spMax, derived: { fortify: ship.fortify } })}
+    </div>
+
+    <nav class="sss-tabs">
+      ${[["combat", "Stations & Actions"], ["notes", "Notes"]]
+        .map(([k, l]) => `<button type="button" data-action="tab" data-tab="${k}" class="${tab === k ? "is-active" : ""}">${l}</button>`)
+        .join("")}
+    </nav>
+    <div class="sss-tab-body">
+      ${tab === "combat" ? npcCombat(vm) : `<textarea name="ship.notes" class="sss-notes"${dis(editable)}>${esc(ship.notes)}</textarea>`}
+    </div>
+  </div>`;
+}
+
+function npcCombat(vm) {
+  const { ship, editable } = vm;
+  const stations = ship.stations
+    .map(
+      (st, i) => `<li class="sss-npc-station${st.malfunctioning ? " is-malfunctioning" : ""}">
+      <select name="ship.stations.${i}.type"${dis(editable)}>${Object.entries(NPC_STATIONS).map(([k, l]) => opt(k, l, st.type)).join("")}</select>
+      <input type="text" name="ship.stations.${i}.name" value="${esc(st.name)}" placeholder="What it runs (e.g. coilgun, Boost Thrusters)"${dis(editable)}>
+      <label class="sss-malf"><input type="checkbox" name="ship.stations.${i}.malfunctioning"${st.malfunctioning ? " checked" : ""}${dis(editable)}> Malfunctioning</label>
+      ${editable ? `<button type="button" class="sss-x" data-action="removeNPCStation" data-index="${i}" title="Remove">✕</button>` : ""}
+    </li>`
+    )
+    .join("");
+
+  const strikes = vm.strikes.length
+    ? vm.strikes
+        .map(
+          (s) => `<li class="sss-weapon">
+        <div class="sss-weapon-head"><strong>${esc(s.label)}</strong> <span class="sss-dim">${esc(s.kind)}</span></div>
+        <div class="sss-weapon-roll">
+          ${s.variants.map((v, vi) => `<button type="button" class="sss-strike" data-action="npcStrike" data-strike="${s.index}" data-variant="${vi}">${esc(v)}</button>`).join("")}
+          <button type="button" data-action="npcDamage" data-strike="${s.index}">${esc(s.damage || "Damage")}</button>
+          <button type="button" data-action="npcDamage" data-strike="${s.index}" data-critical="1">Crit</button>
+        </div>
+        <div class="sss-traits-list">${s.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>
+      </li>`
+        )
+        .join("")
+    : `<li class="sss-hint">No Strikes yet. Use “Edit stat block” to add them in the system's NPC sheet.</li>`;
+
+  const groups = Object.entries(NPC_STATIONS)
+    .map(([key, label]) => {
+      const acts = vm.actions.filter((a) => (a.station || "other") === key);
+      if (!acts.length) return "";
+      const malf = ship.stations.some((st) => st.type === key && st.malfunctioning);
+      return `<div class="sss-action-group${malf ? " is-malfunctioning" : ""}"><label>${esc(label)}${malf ? " — malfunctioning" : ""}</label><ul class="sss-actions">${acts
+        .map(
+          (a) => `<li class="sss-action">
+          <button type="button" class="sss-action-name" data-action="npcAction" data-item="${a.id}">${costGlyph(a.cost)} ${esc(a.name)}</button>
+          ${a.traits.length ? `<span class="sss-freq">${esc(a.traits.join(", "))}</span>` : ""}
+          ${editable ? `<select data-action-change="assignStation" data-item="${a.id}" title="Battle station">${Object.entries(NPC_STATIONS).map(([k, l]) => opt(k, l, a.station || "other")).join("")}</select>` : ""}
+        </li>`
+        )
+        .join("")}</ul></div>`;
+    })
+    .join("");
+
+  return `
+  <section class="sss-card">
+    <label class="sss-section">Battle Stations ${editable ? `<button type="button" data-action="addNPCStation">+ Add</button>` : ""}</label>
+    <ul class="sss-npc-stations">${stations}</ul>
+  </section>
+  <section class="sss-card">
+    <label class="sss-section">Strikes</label>
+    <ul class="sss-weapons-list">${strikes}</ul>
+  </section>
+  <section class="sss-card">
+    <label class="sss-section">Actions <span class="sss-hint">Every NPC starship can also ${link("rules/1407-starship-archive", "Repair Self and Seek Starships")}</span></label>
+    ${groups || `<p class="sss-hint">No actions yet. Add them with “Edit stat block”, then assign each to a battle station here.</p>`}
+  </section>`;
+}

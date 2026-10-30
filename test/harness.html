@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Starship Sheets Test</title>
+<link rel="stylesheet" href="../sf2e-starship-sheets/styles/starship.css">
+<style>
+  body { background: #222; color: #ddd; font-family: sans-serif; margin: 0; padding: 12px; }
+  #results { font-family: monospace; white-space: pre-wrap; background: #111; padding: 8px; margin-bottom: 12px; }
+  .pass { color: #6f6; } .fail { color: #f66; font-weight: bold; }
+  .frame { width: 900px; margin-bottom: 20px; border: 1px solid #555; }
+  .action-glyph { font-family: monospace; border: 1px solid #888; padding: 0 2px; font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="results"></div>
+<div class="sf2e-starship-sheets frame" id="pc"><div class="window-content"></div></div>
+<div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
+<script type="module">
+import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync } from "../sf2e-starship-sheets/scripts/logic.mjs";
+import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
+
+const out = [];
+let failures = 0;
+const eq = (label, got, want) => {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (!ok) failures++;
+  out.push(`<span class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span> ${label}: got ${JSON.stringify(got)}${ok ? "" : `, want ${JSON.stringify(want)}`}`);
+};
+
+// The group's ship from the AoN builder link: level 6 Skirmisher.
+const ship = defaultPCShip("skirmisher", 6);
+const set = (i, props) => Object.assign(ship.stations[i], props);
+set(0, { upgrades: ["powerful-thrusters", "ramming-prow"], helmer: "pilot" });
+set(1, { upgrades: ["primal-shielding", "mechanic-generator-module"] });
+set(2, { type: "gunnery", upgrades: ["starship-weapon-crystal", "secondary-armaments"], weapons: [{ key: "farseeker-missiles" }, { key: "light-laser-cannon" }], helmer: "gunner" });
+set(3, { type: "conduit", upgrades: ["mystic-magic-module", "witchwarper-magic-module"] });
+set(4, { type: "scanners", upgrades: ["communications-overlay", "security-relay"], helmer: "scanner" });
+set(5, { type: "gunnery", upgrades: ["secondary-armaments", "munitions-deflection-unit"], weapons: [{ key: "light-laser-cannon" }, { key: "chain-repeater" }] });
+ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
+
+const crew = {
+  pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
+  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, ranks: { simple: 2, martial: 1, advanced: 0 } },
+  scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } }
+};
+
+// Unhelmed: must match the AoN builder exactly.
+const bare = structuredClone(ship);
+bare.stations.forEach((s) => (s.helmer = ""));
+const b = derivePCShip(bare, {});
+eq("Frame HP", b.hpMax, 78);
+eq("Frame SP", b.spMax, 34);
+eq("AC unhelmed", b.ac.total, 22);
+eq("Saves unhelmed", [b.saves.fortitude.total, b.saves.reflex.total, b.saves.will.total], [14, 15, 14]);
+eq("Speed", b.speed, 5);
+eq("Sensor range (4 + advanced scanners 2)", b.sensor.total, 6);
+eq("Station grades", b.stations.map((s) => s.gradeLabel), ["Advanced", "Advanced", "Advanced", "Advanced", "Advanced", "Advanced"]);
+eq("Pilot upgrades allowed", b.stations[0].upgradesAllowed, 2);
+eq("No warnings", b.warnings, []);
+eq("Gunnery weapon formulas", b.stations[2].weaponsView.map((w) => w.formula), ["2d8", "2d8"]);
+eq("Tracking", b.stations[2].weaponsView[0].tracking, 1);
+eq("Pilot actions", b.stations[0].actions.map((a) => a.name), ["Boost Thrusters", "Change Heading", "Evade", "Juke", "Stick To Cover", "Clear A Path", "Smoke And Mirrors", "Uncanny Turn", "Overload Thrusters", "Ram", "Jump Start", "Repair Station"]);
+eq("Generator actions", b.stations[1].actions.map((a) => a.name), ["Boost Battle Station", "Generate Shields", "Reposition Shield", "Vent Power", "Shielding Foliage", "Modify Starship", "Jump Start", "Repair Station"]);
+eq("Gunnery 1 actions", b.stations[2].actions.map((a) => a.name), ["Lock On", "Target Battle Station", "Nova Weapon", "Nova Strike", "Nova Blast", "Nova Surge", "Jump Start", "Repair Station", "Area Fire"]);
+eq("Gunnery 2 actions include Deflect Munitions and Auto-Fire", ["Deflect Munitions", "Auto-Fire"].every((n) => b.stations[5].actions.some((a) => a.name === n)), true);
+eq("Scanner actions", b.stations[4].actions.map((a) => a.name), ["Hack Comms", "Seek Starships", "Target Lock", "Hack Battle Station", "Scan Target", "Hack Munition", "Security Scan", "Jump Start", "Repair Station"]);
+
+// Helmed
+const d = derivePCShip(ship, crew);
+eq("AC with pilot DC 24 + advanced helm +1", d.ac.total, 25);
+eq("Reflex with advanced pilot (+0)", d.saves.reflex.total, 15);
+eq("Gunner attack: dex 4 + martial trained (6+2) + tracking 1", d.stations[2].weaponsView[0].attack, 13);
+eq("Laser (simple, expert): 4 + 6 + 4 + 1", d.stations[2].weaponsView[1].attack, 15);
+eq("Unhelmed gunnery has no attack", d.stations[5].weaponsView[0].attack, null);
+eq("Chain repeater MAP", d.stations[5].weaponsView[1].map, [0, -5, -10]);
+
+// Damage rules
+let s = { hp: 78, hpMax: 78, sp: 34, compromised: 0, wrecked: 0, destroyed: false };
+let r = applyShipDamage(s, { amount: 40 });
+eq("40 damage: SP 0, HP 72", [r.sp, r.hp, r.compromised], [0, 72, 0]);
+r = applyShipDamage({ ...s, sp: 10 }, { amount: 30, bypass: true });
+eq("Bypassing skips shields", [r.sp, r.hp], [10, 48]);
+r = applyShipDamage({ ...s, hp: 10, sp: 0, wrecked: 1 }, { amount: 50 });
+eq("Drop to 0 while wrecked 1: compromised 2, stations malfunction", [r.hp, r.compromised, r.malfunctionAll], [0, 2, true]);
+r = applyShipDamage({ ...s, hp: 10, sp: 0 }, { amount: 50, critical: true });
+eq("Crit to 0: compromised 2", r.compromised, 2);
+r = applyShipDamage({ ...s, hp: 0, sp: 0, compromised: 3 }, { amount: 5 });
+eq("Damage while compromised: +1", r.compromised, 4);
+r = applyShipDamage({ ...s, hp: 0, sp: 0, compromised: 9 }, { amount: 5, critical: true });
+eq("Compromised 10 destroys", [r.compromised, r.destroyed], [10, true]);
+r = applyHullRepair({ ...s, hp: 0, compromised: 4, wrecked: 1 }, 5);
+eq("Repair from 0: compromised ends, wrecked 2", [r.hp, r.compromised, r.wrecked], [5, 0, 2]);
+eq("Hull integrity nat 20 at compromised 3", hullIntegrity(3, 20).compromised, 1);
+eq("Hull integrity 13 at compromised 3 (success)", hullIntegrity(3, 13).compromised, 2);
+eq("Hull integrity 5 at compromised 3 (failure)", hullIntegrity(3, 5).compromised, 4);
+eq("Hull integrity 1 at compromised 3 (crit fail)", hullIntegrity(3, 1).compromised, 5);
+eq("Generate Shields dice by level 1/3/6/20", [1, 3, 6, 20].map(generateShieldsDice), [1, 2, 3, 10]);
+eq("Vent Power dice by level 5/6/8", [5, 6, 8].map(ventPowerDice), [1, 2, 3]);
+eq("Vehicle sync", vehicleSync(d, 90), {
+  "system.details.level.value": 6, "system.attributes.hp.max": 78, "system.attributes.hp.value": 78,
+  "system.attributes.ac.value": 25, "system.saves.fortitude.value": 14, "system.details.speed": "5 zones", "system.traits.size.value": "med"
+});
+
+// Warnings
+const bad = structuredClone(bare);
+bad.stations[0].upgrades.push("solar-thrusters");
+bad.stations[1].upgrades.push("coilgun");
+eq("Too many upgrades warns", derivePCShip(bad, {}).warnings.some((w) => w.includes("3 upgrades")), true);
+
+out.unshift(failures ? `<span class="fail">${failures} FAILED</span>` : `<span class="pass">ALL PASSED</span>`);
+document.getElementById("results").innerHTML = out.join("\n");
+
+// Render the PC sheet
+document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
+  name: "The Starfinder Skirmisher", img: "", editable: true, ship, derived: d,
+  hp: { value: 72, max: 78 }, hpField: "system.attributes.hp.value",
+  crewOptions: Object.entries(crew).map(([uuid, c]) => ({ uuid, name: c.name })), tab: "stations"
+});
+
+// Render an NPC sheet (Sword-class Attack Vessel)
+const npcShip = { kind: "npc", sp: 6, spMax: 6, fortify: 5, sensor: 4, speed: 4, compromised: 0, wrecked: 0, destroyed: false, heading: "west", notes: "",
+  stations: [{ type: "gunnery", name: "coilgun, light laser cannon", malfunctioning: false }, { type: "pilot", name: "Ambush from Hell, Boost Thrusters, Change Heading, ramming prow", malfunctioning: true }] };
+document.querySelector("#npc .window-content").innerHTML = renderNPCSheet({
+  name: "Sword-class Attack Vessel", img: "", editable: true, isGM: true, ship: npcShip, level: 2, size: "Medium", traits: ["Tech"],
+  ac: 17, pilotingDC: 17, saves: { fortitude: 9, reflex: 9, will: 5 }, perception: 7,
+  skills: [{ slug: "computers", label: "Computers", mod: 7 }, { slug: "intimidation", label: "Intimidation", mod: 8 }, { slug: "piloting", label: "Piloting", mod: 7 }],
+  abilities: [["Str", 1], ["Dex", 3], ["Con", 2], ["Int", 3], ["Wis", 1], ["Cha", 2]].map(([label, mod]) => ({ label, mod })),
+  immunities: "starship immunities", resistances: "piercing 4", weaknesses: "",
+  hp: { value: 30, max: 30 }, hpField: "system.attributes.hp.value",
+  strikes: [
+    { index: 0, label: "Ramming Prow", kind: "Melee", variants: ["+9", "+4", "-1"], damage: "1d6+3 piercing", traits: ["Analog"] },
+    { index: 1, label: "Coilgun", kind: "Ranged", variants: ["+11", "+7", "+3"], damage: "1d6+3 piercing", traits: ["Agile", "Analog", "Range increment 3 zones"] }
+  ],
+  actions: [
+    { id: "a1", name: "Ambush from Hell", cost: 2, traits: [], station: "pilot" },
+    { id: "a2", name: "Engaged Strike", cost: "r", traits: [], station: "gunnery" },
+    { id: "a3", name: "Repair Self", cost: 1, traits: [], station: "other" }
+  ],
+  tab: "combat"
+});
+
+// Load main.mjs against minimal Foundry stand-ins: proves it parses and registers.
+const registered = [];
+globalThis.foundry = {
+  applications: {
+    sheets: { ActorSheetV2: class {} },
+    api: { DialogV2: {}, ApplicationV2: class {} },
+    apps: { DocumentSheetConfig: { registerSheet: (...a) => registered.push(a[3].label) } },
+    instances: new Map()
+  },
+  utils: { deepClone: structuredClone, mergeObject: Object.assign, setProperty() {}, getProperty() {}, expandObject: (o) => o }
+};
+const hooks = {};
+globalThis.Hooks = { once: (n, f) => (hooks[n] = f), on: () => {} };
+globalThis.game = { system: { id: "sf2e" }, settings: { register() {} }, modules: new Map([["sf2e-starship-sheets", {}]]) };
+globalThis.Actor = class {};
+try {
+  await import("../sf2e-starship-sheets/scripts/main.mjs");
+  hooks.init();
+  document.getElementById("results").innerHTML += `\n<span class="pass">PASS</span> main.mjs loaded and registered: ${registered.join(", ")}`;
+} catch (err) {
+  document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
+}
+window.__done = true;
+</script>
+</body>
+</html>
