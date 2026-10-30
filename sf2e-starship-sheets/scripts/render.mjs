@@ -20,7 +20,24 @@ export function costGlyph(cost) {
   return g(cost);
 }
 
-function actionRow(a, { station, stationName, helmerName, disabled }) {
+/** Spell repository buttons: Cosmic Cannon attacks and damage, or Cast for the other spells. */
+function spellButtons(a, s) {
+  const i = s.index;
+  const off = s.malfunctioning ? " disabled" : "";
+  if (a.id !== 504) return `<button type="button" class="sss-roll" data-action="castSpell" data-spell="${a.id}" data-station="${i}"${off} title="Choose a rank and roll">Cast</button>`;
+  const caster = s.helmerData;
+  if (!caster || caster.missing) return `<span class="sss-hint">Assign a spellcaster</span>`;
+  if (caster.spellAttack === null || caster.spellAttack === undefined) return `<span class="sss-hint">${esc(caster.name)} can't cast spells</span>`;
+  const rank = Math.max(1, Math.ceil(caster.level / 2));
+  const attacks = [0, -5, -10]
+    .map((pen, mi) => `<button type="button" class="sss-strike" data-action="spellAttack" data-station="${i}" data-map="${mi}"${off} title="Spell attack vs target's AC">${signed(caster.spellAttack + pen)}</button>`)
+    .join("");
+  return `${attacks}
+    <button type="button" class="sss-roll" data-action="spellDamage" data-station="${i}"${off} title="Rank ${rank} cantrip">${1 + rank}d4 force</button>
+    <button type="button" class="sss-roll" data-action="spellDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
+}
+
+function actionRow(a, { station, stationName, helmerName, disabled, extraHtml = "" }) {
   const extra =
     a.id === 588 ? `<button type="button" data-action="generateShields" data-station="${station}" title="Roll and add Shield Points">Roll</button>` :
     a.id === 590 ? `<button type="button" data-action="ventPower" data-station="${station}" title="Roll Vent Power damage">Roll</button>` : "";
@@ -32,7 +49,7 @@ function actionRow(a, { station, stationName, helmerName, disabled }) {
     ${a.freq ? `<span class="sss-freq">${esc(a.freq)}</span>` : ""}
     ${a.source && a.source !== "Universal" && a.source !== stationName ? `<span class="sss-src">${esc(a.source)}</span>` : ""}
     ${checkButtons(a, station, locked)}
-    ${extra}
+    ${extra}${extraHtml}
     ${link(a.url, "↗")}
   </li>`;
 }
@@ -226,7 +243,11 @@ function stationCard(s, vm) {
     .filter((a) => a.id !== 17 && a.id !== 19)
     .map((a) => actionRow(a, rowOpts))
     .join("")}</ul>`;
-  const spells = s.spells ? `<div class="sss-sub-list"><label>Spell repository</label><ul class="sss-actions">${s.spells.map((a) => actionRow(a, rowOpts)).join("")}</ul></div>` : "";
+  const spells = s.spells
+    ? `<div class="sss-sub-list"><label>Spell repository <span class="sss-hint">(the helmer casts with their own spell slots)</span></label><ul class="sss-actions">${s.spells
+        .map((a) => actionRow(a, { ...rowOpts, extraHtml: spellButtons(a, s) }))
+        .join("")}</ul></div>`
+    : "";
   const drones = s.drones
     ? `<div class="sss-sub-list"><label>Drone actions (while that drone is deployed)</label>${s.drones
         .map((dr) => `<div class="sss-drone">${link(dr.url, dr.name)}<ul class="sss-actions">${dr.actionList.map((a) => actionRow(a, rowOpts)).join("")}</ul></div>`)

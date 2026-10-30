@@ -263,6 +263,25 @@ export function actionCheck(id, stationType) {
   return { skills: c.skills, vs: c.vs ?? null, dc: c.dc ?? null, secret: !!c.secret };
 }
 
+/** Rank a cantrip is automatically heightened to. */
+export const cantripRank = (level) => Math.max(1, Math.ceil(level / 2));
+
+/**
+ * Magic conduit spell repository at a rank: Cosmic Bombardment (503), Cosmic Cannon (504),
+ * Cosmic Fortification (505) and Cosmic Repairs (506).
+ */
+export function cosmicSpell(id, rank, actions = 1) {
+  const r = Math.max(1, Math.trunc(rank) || 1);
+  if (id === 503) {
+    const missiles = clamp(Math.trunc(actions) || 1, 1, 3) * (1 + Math.floor((r - 1) / 2));
+    return { formula: `${missiles}d4+${missiles}`, type: "force", missiles };
+  }
+  if (id === 504) return { formula: `${1 + r}d4`, type: "force" };
+  if (id === 505) return { formula: `${r}d4+${4 * r}`, restores: "sp" };
+  if (id === 506) return { formula: `${r}d8+${8 * r}`, restores: "hp" };
+  return null;
+}
+
 export function generateShieldsDice(level) {
   return 1 + Math.floor((Math.max(1, level) - 1) / 2);
 }

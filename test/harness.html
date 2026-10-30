@@ -17,7 +17,7 @@
 <div class="sf2e-starship-sheets frame" id="pc"><div class="window-content"></div></div>
 <div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
 <script type="module">
-import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync } from "../sf2e-starship-sheets/scripts/logic.mjs";
+import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank } from "../sf2e-starship-sheets/scripts/logic.mjs";
 import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
 
 const out = [];
@@ -34,7 +34,7 @@ const set = (i, props) => Object.assign(ship.stations[i], props);
 set(0, { upgrades: ["powerful-thrusters", "ramming-prow"], helmer: "pilot" });
 set(1, { upgrades: ["primal-shielding", "mechanic-generator-module"] });
 set(2, { type: "gunnery", upgrades: ["starship-weapon-crystal", "secondary-armaments"], weapons: [{ key: "farseeker-missiles" }, { key: "light-laser-cannon" }], helmer: "gunner" });
-set(3, { type: "conduit", upgrades: ["mystic-magic-module", "witchwarper-magic-module"] });
+set(3, { type: "conduit", upgrades: ["mystic-magic-module", "witchwarper-magic-module"], helmer: "mystic" });
 set(4, { type: "scanners", upgrades: ["communications-overlay", "security-relay"], helmer: "scanner" });
 set(5, { type: "gunnery", upgrades: ["secondary-armaments", "munitions-deflection-unit"], weapons: [{ key: "light-laser-cannon" }, { key: "chain-repeater" }] });
 ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
@@ -42,8 +42,16 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
   gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, ranks: { simple: 2, martial: 1, advanced: 0 } },
-  scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } }
+  scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
+  mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
 };
+
+eq("Cantrip rank at level 6", cantripRank(6), 3);
+eq("Cosmic Cannon rank 1 / 3", [cosmicSpell(504, 1).formula, cosmicSpell(504, 3).formula], ["2d4", "4d4"]);
+eq("Cosmic Bombardment rank 1, 3 actions", cosmicSpell(503, 1, 3).formula, "3d4+3");
+eq("Cosmic Bombardment rank 3, 2 actions (2 missiles per action)", cosmicSpell(503, 3, 2).formula, "4d4+4");
+eq("Cosmic Fortification rank 2", cosmicSpell(505, 2).formula, "2d4+8");
+eq("Cosmic Repairs rank 3", cosmicSpell(506, 3).formula, "3d8+24");
 
 // Unhelmed: must match the AoN builder exactly.
 const bare = structuredClone(ship);
@@ -208,6 +216,21 @@ try {
   const scanBtn = [...document.querySelectorAll('#pc [data-action="rollActionCheck"]')].find((el) => el.closest("li").textContent.includes("Scan Target"));
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.rollActionCheck.call(sheet, {}, scanBtn);
   check("Scan Target rolls Zo's Computers vs target's Will DC 18", rolls[0], { event: {}, label: "Scan Target (Computers)", dc: { value: 18, label: "Raider's Will DC" } });
+
+  // Cosmic Cannon spell attacks
+  const conduit = document.querySelector("#pc .sss-conduit");
+  check("Cosmic Cannon attack buttons", [...conduit.querySelectorAll('[data-action="spellAttack"]')].map((b) => b.textContent), ["+14", "+9", "+4"]);
+  check("Cosmic Cannon damage button", conduit.querySelector('[data-action="spellDamage"]').textContent.trim(), "4d4 force");
+  check("Other spells have Cast", [...conduit.querySelectorAll('[data-action="castSpell"]')].map((b) => b.dataset.spell), ["503", "505", "506"]);
+  const spellRolls = [];
+  const mystic = { name: "Vesk", level: 6, itemTypes: { spellcastingEntry: [{ statistic: { check: { mod: 14 }, roll: async (p) => spellRolls.push(p) } }] } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "mystic" ? mystic : uuid === "scanner" ? helmer : null);
+  globalThis.game.pf2e = { Modifier: class { constructor(d) { Object.assign(this, d); } } };
+  globalThis.game.user.targets = new Set([{ actor: { type: "npc", name: "Raider", attributes: { ac: { value: 20 } } } }]);
+  const mapBtn = conduit.querySelectorAll('[data-action="spellAttack"]')[1];
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.spellAttack.call(sheet, {}, mapBtn);
+  check("Spell attack rolls caster's spellcasting vs target AC 20 with MAP -5", { label: spellRolls[0].label, dc: spellRolls[0].dc, map: spellRolls[0].modifiers?.[0]?.modifier },
+    { label: "Cosmic Cannon: spell attack (MAP -5)", dc: { value: 20, label: "Raider's AC" }, map: -5 });
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

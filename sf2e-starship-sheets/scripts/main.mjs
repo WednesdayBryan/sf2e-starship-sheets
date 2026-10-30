@@ -5,8 +5,8 @@
  */
 import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
-  DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, defaultNPCShip, defaultPCShip, degreeOfSuccess,
-  derivePCShip, frameRow, hullIntegrity, ventPowerDice, vehicleSync
+  DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -32,6 +32,12 @@ export function getShip(actor) {
 
 export const isStarship = (actor) => !!actor?.flags?.[MODULE_ID]?.ship;
 
+/** The crew member's best spellcasting entry (starship spells exist in all four traditions). */
+function spellcastingEntry(actor) {
+  const entries = (actor?.itemTypes?.spellcastingEntry ?? []).filter((e) => Number.isFinite(e.statistic?.check?.mod));
+  return entries.sort((x, y) => y.statistic.check.mod - x.statistic.check.mod)[0] ?? null;
+}
+
 function crewInfo(uuid) {
   const a = uuid ? fromUuidSync(uuid) : null;
   if (!a) return null;
@@ -39,6 +45,7 @@ function crewInfo(uuid) {
   return {
     name: a.name,
     actor: a,
+    spellAttack: spellcastingEntry(a)?.statistic.check.mod ?? null,
     pilotDC: a.skills?.piloting?.dc?.value ?? null,
     dex: a.system?.abilities?.dex?.mod ?? 0,
     level: a.level ?? 0,
@@ -181,7 +188,7 @@ export async function setImage(actor, path, target) {
 
 /* ---------------------------------- dialogs ---------------------------------- */
 
-async function numberDialog(title, fields) {
+async function numberDialog(title, fields, okLabel = "Apply") {
   const content = fields
     .map((f) =>
       f.type === "checkbox"
@@ -194,7 +201,7 @@ async function numberDialog(title, fields) {
     content,
     buttons: [{
       action: "ok",
-      label: "Apply",
+      label: okLabel,
       default: true,
       callback: (event, button) => {
         const out = {};
@@ -375,6 +382,9 @@ export class PCStarshipSheet extends StarshipSheetBase {
       rollSave: PCStarshipSheet.#onRollSave,
       postAction: PCStarshipSheet.#onPostAction,
       rollActionCheck: PCStarshipSheet.#onRollActionCheck,
+      spellAttack: PCStarshipSheet.#onSpellAttack,
+      spellDamage: PCStarshipSheet.#onSpellDamage,
+      castSpell: PCStarshipSheet.#onCastSpell,
       generateShields: PCStarshipSheet.#onGenerateShields,
       ventPower: PCStarshipSheet.#onVentPower,
       strike: PCStarshipSheet.#onStrike,
@@ -494,6 +504,77 @@ export class PCStarshipSheet extends StarshipSheetBase {
     if (dc) params.dc = dc;
     if (check.secret) params.rollMode = "blindroll";
     await statistic.roll(params);
+  }
+
+  /** Cosmic Cannon: ranged spell attack against the targeted starship's AC. */
+  static async #onSpellAttack(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    const entry = spellcastingEntry(actor);
+    if (!actor) return;
+    if (!entry) return ui.notifications.warn(`${actor.name} can't cast spells.`);
+    const mi = Number(target.dataset.map) || 0;
+    const penalty = [0, -5, -10][mi];
+    const ac = targetAC();
+    const label = `Cosmic Cannon: spell attack${mi ? ` (MAP ${penalty})` : ""}`;
+    const Modifier = game.pf2e?.Modifier ?? game.sf2e?.Modifier;
+    if (penalty === 0 || Modifier) {
+      const params = { event, label };
+      if (ac) params.dc = { value: ac.ac, label: `${ac.name}'s AC` };
+      if (penalty) params.modifiers = [new Modifier({ slug: "multiple-attack-penalty", label: "Multiple Attack Penalty", modifier: penalty })];
+      return entry.statistic.roll(params);
+    }
+    return rollCheck({ label, mod: entry.statistic.check.mod + penalty, speaker: ChatMessage.getSpeaker({ actor }), dc: ac });
+  }
+
+  static async #onSpellDamage(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    if (!actor) return;
+    const rank = cantripRank(actor.level ?? 1);
+    const critical = target.dataset.critical === "1";
+    await rollDamage({
+      ...cosmicSpell(504, rank),
+      critical,
+      speaker: ChatMessage.getSpeaker({ actor }),
+      flavor: `<strong>Cosmic Cannon</strong> (rank ${rank}) ${critical ? "critical " : ""}damage`
+    });
+  }
+
+  /** Cosmic Bombardment, Cosmic Fortification or Cosmic Repairs at a chosen rank. */
+  static async #onCastSpell(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    if (!actor) return;
+    const id = Number(target.dataset.spell);
+    const name = ACTIONS[id].name;
+    const fields = [{ name: "rank", label: "Spell rank", value: cantripRank(actor.level ?? 1) }];
+    if (id === 503) fields.push({ name: "actions", label: "Actions spent (1–3)", value: 3 });
+    const input = await numberDialog(`${name}: ${actor.name}`, fields, "Cast");
+    if (!input) return;
+    const spell = cosmicSpell(id, input.rank, input.actions);
+    const speaker = ChatMessage.getSpeaker({ actor });
+    const slot = `Expend a rank ${Math.max(1, input.rank)} spell slot.`;
+
+    if (id === 503) {
+      return rollDamage({
+        formula: spell.formula, type: spell.type, speaker,
+        flavor: `<strong>Cosmic Bombardment</strong> (rank ${input.rank}): ${spell.missiles} missile${spell.missiles > 1 ? "s" : ""}, automatically hit. ${slot}`
+      });
+    }
+
+    // Fortification and Repairs heal the targeted starship if the user can update it, otherwise this one.
+    const targeted = [...game.user.targets][0]?.actor;
+    const ship = targeted && isStarship(targeted) && targeted.isOwner ? targeted : this.document;
+    const roll = new Roll(spell.formula);
+    await roll.evaluate();
+    const { ship: data, spMax, state } = damageState(ship);
+    const result = spell.restores === "sp" ? applyShieldGain(state, roll.total, spMax) : applyHullRepair(state, roll.total);
+    await roll.toMessage({
+      speaker,
+      flavor: `<strong>${name}</strong> (rank ${input.rank}) on ${esc(ship.name)}: +${roll.total} ${spell.restores === "sp" ? "Shield" : "Hull"} Points. ${esc(result.notes.join(" "))} ${slot}`
+    });
+    await writeState(ship, data, result);
   }
 
   static async #onPostAction(event, target) {

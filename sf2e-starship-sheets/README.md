@@ -36,6 +36,11 @@ Give your players **Owner** permission on the player starship so they can use it
   - Secret checks (Seek Starships, Security Scan) are rolled blind for the GM.
   - Actions where the enemy saves instead (Target Lock, Ram, Pull Starship and so on) have a DC button. It posts the helmer's DC for the enemy's save.
   - Jump Start only appears at the generator, magic conduit and scanners, using the skill for that station.
+- **Magic conduit spells.** The helmer casts with their own spellcasting, choosing their best spell attack modifier.
+  - **Cosmic Cannon** has spell attack buttons with the multiple attack penalty. Target the enemy starship and the roll shows the result against its AC. Damage and Crit buttons use the cantrip's automatic heightening (half the caster's level, rounded up).
+  - **Cosmic Bombardment** asks for a rank and the actions spent, then rolls its automatic-hit missiles.
+  - **Cosmic Fortification** and **Cosmic Repairs** ask for a rank, roll, and restore Shield Points or Hull Points. They affect the targeted starship if you own it; otherwise they affect this one.
+  - Chat reminds the caster which rank of spell slot to expend.
 - **Hull and shields:**
   - **Damage** takes damage from SP first; bypassing damage skips SP.
   - At 0 HP the ship becomes compromised, adding its wrecked value, and every station becomes malfunctioning.
