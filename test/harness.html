@@ -60,9 +60,19 @@ eq("Pilot upgrades allowed", b.stations[0].upgradesAllowed, 2);
 eq("No warnings", b.warnings, []);
 eq("Gunnery weapon formulas", b.stations[2].weaponsView.map((w) => w.formula), ["2d8", "2d8"]);
 eq("Tracking", b.stations[2].weaponsView[0].tracking, 1);
-eq("Pilot actions", b.stations[0].actions.map((a) => a.name), ["Boost Thrusters", "Change Heading", "Evade", "Juke", "Stick To Cover", "Clear A Path", "Smoke And Mirrors", "Uncanny Turn", "Overload Thrusters", "Ram", "Jump Start", "Repair Station"]);
+eq("Pilot actions (no Jump Start)", b.stations[0].actions.map((a) => a.name), ["Boost Thrusters", "Change Heading", "Evade", "Juke", "Stick To Cover", "Clear A Path", "Smoke And Mirrors", "Uncanny Turn", "Overload Thrusters", "Ram", "Repair Station"]);
+const act = (si, name) => b.stations[si].actions.find((a) => a.name === name)?.check;
+eq("Juke: Piloting vs Perception DC", act(0, "Juke"), { skills: ["piloting"], vs: "perception", dc: null, secret: false });
+eq("Ram: target Fortitude vs Piloting DC", act(0, "Ram"), { save: "fortitude", basic: true, dcSkill: "piloting", dcClass: false });
+eq("Jump Start at generator: Crafting DC 15", act(1, "Jump Start"), { skills: ["crafting"], dc: 15, vs: null, secret: false });
+eq("Jump Start at conduit: four skills", act(3, "Jump Start").skills, ["arcana", "occultism", "nature", "religion"]);
+eq("Scan Target: Computers vs Will DC", act(4, "Scan Target"), { skills: ["computers"], vs: "will", dc: null, secret: false });
+eq("Seek Starships is secret", act(4, "Seek Starships").secret, true);
+eq("Target Lock: target Will vs Computers DC", act(4, "Target Lock").save, "will");
+eq("Lock On has no roll", act(2, "Lock On"), null);
+eq("Repair Drone's Repair Hull: Crafting DC 15", b.stations.length && derivePCShip({ ...bare, stations: [...bare.stations.slice(0, 5), { ...bare.stations[5], type: "drone", upgrades: [], weapons: [] }] }, {}).stations[5].drones[1].actionList[0].check.dc, 15);
 eq("Generator actions", b.stations[1].actions.map((a) => a.name), ["Boost Battle Station", "Generate Shields", "Reposition Shield", "Vent Power", "Shielding Foliage", "Modify Starship", "Jump Start", "Repair Station"]);
-eq("Gunnery 1 actions", b.stations[2].actions.map((a) => a.name), ["Lock On", "Target Battle Station", "Nova Weapon", "Nova Strike", "Nova Blast", "Nova Surge", "Jump Start", "Repair Station", "Area Fire"]);
+eq("Gunnery 1 actions", b.stations[2].actions.map((a) => a.name), ["Lock On", "Target Battle Station", "Nova Weapon", "Nova Strike", "Nova Blast", "Nova Surge", "Repair Station", "Area Fire"]);
 eq("Gunnery 2 actions include Deflect Munitions and Auto-Fire", ["Deflect Munitions", "Auto-Fire"].every((n) => b.stations[5].actions.some((a) => a.name === n)), true);
 eq("Scanner actions", b.stations[4].actions.map((a) => a.name), ["Hack Comms", "Seek Starships", "Target Lock", "Hack Battle Station", "Scan Target", "Hack Munition", "Security Scan", "Jump Start", "Repair Station"]);
 
@@ -149,7 +159,7 @@ globalThis.foundry = {
     apps: { DocumentSheetConfig: { registerSheet: (...a) => registered.push(a[3].label) } },
     instances: new Map()
   },
-  utils: { deepClone: structuredClone, mergeObject: Object.assign, setProperty() {}, getProperty() {}, expandObject: (o) => o }
+  utils: { deepClone: (o) => structuredClone(o), mergeObject: Object.assign, setProperty() {}, getProperty() {}, expandObject: (o) => o }
 };
 const hooks = {};
 globalThis.Hooks = { once: (n, f) => (hooks[n] = f), on: () => {} };
@@ -179,6 +189,25 @@ try {
   await main.setImage(a, "tokens/top-down.webp", "token");
   check("Token button sets only the token", a.updates[1], { "prototypeToken.texture.src": "tokens/top-down.webp" });
   check("Token button is rendered", !!document.querySelector('#pc [data-action="editToken"]'), true);
+  const rollBtns = [...document.querySelectorAll('#pc [data-action="rollActionCheck"]')].map((el) => `${el.closest("li").querySelector(".sss-action-name").textContent.trim().replace(/^\S+\s*/, "")}:${el.dataset.skill}`);
+  check("Scanner roll buttons", rollBtns.filter((t) => /Scan Target|Hack Battle|Seek/.test(t)), ["Seek Starships:computers", "Seek Starships:perception", "Hack Battle Station:computers", "Scan Target:computers"]);
+  check("Juke roll button", rollBtns.includes("Juke:piloting"), true);
+  check("Target Lock shows a Will DC button", [...document.querySelectorAll('#pc .sss-roll[data-action="postAction"]')].some((el) => el.textContent.includes("Will DC")), true);
+
+  // Clicking a roll button rolls the helmer's own skill against the targeted ship's DC.
+  const rolls = [];
+  const helmer = { name: "Zo", skills: { computers: { roll: async (p) => rolls.push(p) } } };
+  const shipActor = { type: "vehicle", name: "Test Ship", flags: { "sf2e-starship-sheets": { ship } }, system: { attributes: { hp: { value: 78, max: 78 } } } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "scanner" ? helmer : null);
+  globalThis.game.user = { targets: new Set([{ actor: { type: "npc", name: "Raider", saves: { will: { dc: { value: 18 } } } } }]), character: null };
+  globalThis.ui = { notifications: { warn: (m) => rolls.push({ warn: m }), info: () => {} } };
+  globalThis.foundry.utils.mergeObject = (a, b) => ({ ...a, ...b });
+  const sheet = new main.PCStarshipSheet();
+  sheet.document = shipActor;
+  const btn = document.querySelector('#pc [data-action="rollActionCheck"][data-skill="computers"]');
+  const scanBtn = [...document.querySelectorAll('#pc [data-action="rollActionCheck"]')].find((el) => el.closest("li").textContent.includes("Scan Target"));
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.rollActionCheck.call(sheet, {}, scanBtn);
+  check("Scan Target rolls Zo's Computers vs target's Will DC 18", rolls[0], { event: {}, label: "Scan Target (Computers)", dc: { value: 18, label: "Raider's Will DC" } });
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

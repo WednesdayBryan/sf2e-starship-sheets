@@ -161,6 +161,7 @@
 .sss-action.is-disabled .sss-action-name { text-decoration: line-through; opacity: 0.6; }
 .sss-action-name { flex: 1; text-align: left; background: transparent !important; border: none !important; padding: 1px 2px !important; }
 .sss-action-name:hover { color: var(--sss-accent-2); box-shadow: none !important; }
+.sss-roll { font-size: 11px !important; padding: 0 6px !important; line-height: 18px !important; color: var(--sss-accent-2) !important; }
 .sss-freq, .sss-src { font-size: 11px; color: var(--sss-dim); font-style: italic; }
 .sss-src { color: var(--sss-accent); font-style: normal; }
 .sss-sub-list { border-top: 1px dashed var(--sss-line); padding-top: 4px; }

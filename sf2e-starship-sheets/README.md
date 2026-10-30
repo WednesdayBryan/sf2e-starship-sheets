@@ -29,7 +29,13 @@ Give your players **Owner** permission on the player starship so they can use it
 - **Battle stations.** The two default stations come with the frame's default upgrade, plus 4 customizable slots. Grades follow the ship's level automatically, or you can set one. Assign a crew member to helm each station and mark stations as malfunctioning.
 - **Upgrades and weapons.** Each station lists only the upgrades that fit it. The sheet warns you if a station has more upgrades than its grade allows. A gunnery holds one weapon, or two with Secondary Armaments.
 - **Strikes.** A gunner's attack is Dexterity + proficiency for the weapon category + tracking. The sheet shows three buttons for the multiple attack penalty (agile weapons: −4/−8). If you target a token, the chat message shows the degree of success against its AC. Damage dice scale with the gunnery's grade.
-- **Station actions.** Every action unlocked by the station's grade or its upgrades is listed. Clicking one posts it to chat, with a link to its rules on Archives of Nethys. Generate Shields rolls and adds SP; Vent Power rolls its damage.
+- **Station actions.** Every action unlocked by the station's grade or its upgrades is listed. Clicking an action's name posts it to chat, with a link to its rules on Archives of Nethys. Generate Shields rolls and adds SP; Vent Power rolls its damage.
+- **Rolling station actions.** Actions that call for a check show a button for each skill they allow, such as Piloting for Juke or Computers for Scan Target. The button rolls that skill from the character sheet of the crew member helming the station, using the system's normal check. If no one is assigned, it rolls for the clicking player's own character.
+  - If the action rolls against the target's DC (Juke, Clear a Path, Scan Target, Hack Battle Station and so on), target the enemy starship first and the DC fills in automatically.
+  - Fixed DCs (Repair Hull and Jump Start, both DC 15) are included.
+  - Secret checks (Seek Starships, Security Scan) are rolled blind for the GM.
+  - Actions where the enemy saves instead (Target Lock, Ram, Pull Starship and so on) have a DC button. It posts the helmer's DC for the enemy's save.
+  - Jump Start only appears at the generator, magic conduit and scanners, using the skill for that station.
 - **Hull and shields:**
   - **Damage** takes damage from SP first; bypassing damage skips SP.
   - At 0 HP the ship becomes compromised, adding its wrecked value, and every station becomes malfunctioning.

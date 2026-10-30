@@ -1,7 +1,7 @@
 /**
  * Pure starship rules logic: no Foundry globals, so it can be tested in a plain browser.
  */
-import { ACTIONS, DRONES, FRAMES, GRADE_LABELS, STATIONS, UNIVERSAL_ACTIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import { ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, STATIONS, UNIVERSAL_ACTIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const CUSTOM_SLOTS = 4;
 export const EXPANSION_BAYS = 4;
@@ -164,7 +164,10 @@ function deriveStation(st, index, level, crew, warnings) {
 
   const actions = [];
   const add = (id, source) => {
-    if (ACTIONS[id] && !actions.some((a) => a.id === id)) actions.push({ id, ...ACTIONS[id], source });
+    if (!ACTIONS[id] || actions.some((a) => a.id === id)) return;
+    const check = actionCheck(id, st.type);
+    if (check === false) return;
+    actions.push({ id, ...ACTIONS[id], source, check });
   };
   for (const [gi, ids] of Object.entries(def.actions)) if (Number(gi) <= g) ids.forEach((id) => add(id, def.name));
   for (const key of upgradeKeys) {
@@ -199,7 +202,11 @@ function deriveStation(st, index, level, crew, warnings) {
 
   const extras = {};
   if (st.type === "conduit") extras.spells = def.spells.map((id) => ({ id, ...ACTIONS[id] }));
-  if (st.type === "drone") extras.drones = Object.entries(DRONES).map(([key, d]) => ({ key, ...d, actionList: d.actions.map((id) => ({ id, ...ACTIONS[id] })) }));
+  if (st.type === "drone") {
+    extras.drones = Object.entries(DRONES).map(([key, d]) => ({
+      key, ...d, actionList: d.actions.map((id) => ({ id, ...ACTIONS[id], check: actionCheck(id, st.type) || null }))
+    }));
+  }
 
   return {
     ...base,
@@ -238,6 +245,22 @@ function deriveWeapon(w, wi, st, bonuses, helmerData) {
     area: data.traits.some((t) => /^area/i.test(t)),
     automatic: data.traits.includes("Automatic")
   };
+}
+
+/**
+ * The roll an action asks for at a given station: { skills, vs, dc, secret } for a check the helmer rolls,
+ * { save, basic, dcSkill | dcClass } for a save the target makes, null for none, or false when the action
+ * can't be used at that station (Jump Start).
+ */
+export function actionCheck(id, stationType) {
+  const c = ACTION_CHECKS[id];
+  if (!c) return null;
+  if (c.byStation) {
+    const skills = c.byStation[stationType];
+    return skills ? { skills, dc: c.dc ?? null, vs: null, secret: false } : false;
+  }
+  if (c.save) return { save: c.save, basic: !!c.basic, dcSkill: c.dcSkill ?? null, dcClass: !!c.dcClass };
+  return { skills: c.skills, vs: c.vs ?? null, dc: c.dc ?? null, secret: !!c.secret };
 }
 
 export function generateShieldsDice(level) {

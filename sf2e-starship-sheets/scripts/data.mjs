@@ -120,8 +120,43 @@ export const STATIONS = {
   }
 };
 
-/** Actions every battle station can use. */
+/** Actions every battle station can use (Jump Start only at the stations listed in its check). */
 export const UNIVERSAL_ACTIONS = [609, 610];
+
+/**
+ * What each station action asks the helming crew member to roll.
+ * - `skills`: the helmer rolls one of these; `vs` is the target's DC to roll against (perception, fortitude,
+ *   reflex, will), or `dc` is a fixed DC. `byStation` picks the skills from the station being helmed.
+ * - `save`: the target rolls this save against the helmer's `dcSkill` DC (or class DC with `dcClass`).
+ * - `secret`: the GM rolls it blind.
+ */
+export const ACTION_CHECKS = {
+  416: { save: "fortitude", basic: true, dcSkill: "crafting" },
+  418: { save: "fortitude", dcSkill: "crafting" },
+  430: { save: "fortitude", basic: true, dcSkill: "piloting" },
+  434: { save: "fortitude", basic: true, dcSkill: "piloting" },
+  436: { skills: ["computers"], secret: true },
+  570: { save: "reflex", basic: true, dcClass: true },
+  573: { skills: ["crafting"], dc: 15 },
+  575: { save: "will", dcClass: true },
+  589: { skills: ["crafting", "perception"], vs: "reflex" },
+  590: { save: "reflex", basic: true, dcSkill: "crafting" },
+  599: { skills: ["piloting"], vs: "perception" },
+  601: { skills: ["piloting"], vs: "reflex" },
+  604: { skills: ["computers", "perception"], secret: true },
+  605: { save: "will", dcSkill: "computers" },
+  606: { skills: ["computers"], vs: "fortitude" },
+  607: { skills: ["computers"], vs: "will" },
+  608: { skills: ["computers"], vs: "will" },
+  609: { byStation: { generator: ["crafting"], conduit: ["arcana", "occultism", "nature", "religion"], scanners: ["computers"] }, dc: 15 },
+  610: { skills: ["computers", "crafting"] }
+};
+
+export const SKILL_LABELS = {
+  arcana: "Arcana", computers: "Computers", crafting: "Crafting", nature: "Nature", occultism: "Occultism",
+  perception: "Perception", piloting: "Piloting", religion: "Religion"
+};
+export const SAVE_LABELS = { fortitude: "Fortitude", reflex: "Reflex", will: "Will" };
 
 /** Drones a drone console can deploy, with the station actions each grants while deployed. */
 export const DRONES = {

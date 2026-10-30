@@ -1,7 +1,7 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -24,14 +24,34 @@ function actionRow(a, { station, stationName, helmerName, disabled }) {
   const extra =
     a.id === 588 ? `<button type="button" data-action="generateShields" data-station="${station}" title="Roll and add Shield Points">Roll</button>` :
     a.id === 590 ? `<button type="button" data-action="ventPower" data-station="${station}" title="Roll Vent Power damage">Roll</button>` : "";
-  return `<li class="sss-action${disabled ? " is-disabled" : ""}">
+  // Repair Station is how a malfunctioning station gets fixed, so it stays usable.
+  const locked = disabled && a.id !== 610;
+  return `<li class="sss-action${locked ? " is-disabled" : ""}">
     <button type="button" class="sss-action-name" data-action="postAction" data-action-id="${a.id}" data-station="${station}" title="Post to chat${helmerName ? ` as ${esc(helmerName)}` : ""}">
       ${costGlyph(a.cost)} ${esc(a.name)}</button>
     ${a.freq ? `<span class="sss-freq">${esc(a.freq)}</span>` : ""}
     ${a.source && a.source !== "Universal" && a.source !== stationName ? `<span class="sss-src">${esc(a.source)}</span>` : ""}
+    ${checkButtons(a, station, locked)}
     ${extra}
     ${link(a.url, "↗")}
   </li>`;
+}
+
+/** Roll buttons for an action's check, or a button that posts the save the target must make. */
+function checkButtons(a, station, locked) {
+  const c = a.check;
+  if (!c) return "";
+  if (c.save) {
+    return `<button type="button" class="sss-roll" data-action="postAction" data-action-id="${a.id}" data-station="${station}"${locked ? " disabled" : ""}
+      title="Post the DC for the target's ${c.basic ? "basic " : ""}${SAVE_LABELS[c.save]} save">${SAVE_LABELS[c.save]} DC</button>`;
+  }
+  const against = c.dc ? ` vs DC ${c.dc}` : c.vs ? ` vs the target's ${SAVE_LABELS[c.vs] ?? "Perception"} DC` : "";
+  return c.skills
+    .map(
+      (sk) => `<button type="button" class="sss-roll" data-action="rollActionCheck" data-action-id="${a.id}" data-station="${station}" data-skill="${sk}"${locked ? " disabled" : ""}
+      title="Roll ${SKILL_LABELS[sk]}${against}${c.secret ? " (secret)" : ""}"><i class="fa-solid fa-dice-d20"></i> ${SKILL_LABELS[sk]}</button>`
+    )
+    .join("");
 }
 
 function portrait(vm) {

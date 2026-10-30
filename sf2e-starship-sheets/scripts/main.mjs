@@ -3,7 +3,7 @@
  * Player starships are system `vehicle` actors and NPC starships are system `npc` actors; all starship data is
  * stored in flags, so disabling this module never leaves the world with actors it can't load.
  */
-import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
+import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, defaultNPCShip, defaultPCShip, degreeOfSuccess,
   derivePCShip, frameRow, hullIntegrity, ventPowerDice, vehicleSync
@@ -99,6 +99,31 @@ async function rollDamage({ formula, type, critical = false, flavor, speaker }) 
     await roll.evaluate();
   }
   return roll.toMessage({ speaker, flavor });
+}
+
+/** A DC (perception, fortitude, reflex or will) of the first targeted token, if any. */
+function targetDC(kind) {
+  const target = [...game.user.targets][0]?.actor;
+  if (!target) return null;
+  let value = null;
+  if (target.type === "vehicle" && isStarship(target)) {
+    const save = derivedFor(target).derived.saves[kind];
+    value = save ? 10 + save.total : null;
+  } else {
+    value = kind === "perception" ? target.perception?.dc?.value : target.saves?.[kind]?.dc?.value;
+  }
+  return Number.isFinite(value) ? { value, label: `${target.name}'s ${kind === "perception" ? "Perception" : SAVE_LABELS[kind]} DC` } : null;
+}
+
+/** The helmer's DC a target saves against: a skill DC or their class DC. */
+function helmerDC(helmer, check) {
+  if (!helmer) return null;
+  if (check.dcClass) {
+    const value = helmer.classDC?.dc?.value ?? helmer.system?.attributes?.classDC?.value;
+    return Number.isFinite(value) ? { value, label: "class DC" } : null;
+  }
+  const value = helmer.skills?.[check.dcSkill]?.dc?.value;
+  return Number.isFinite(value) ? { value, label: `${SKILL_LABELS[check.dcSkill]} DC` } : null;
 }
 
 /** AC of the first targeted token, if any. */
@@ -349,6 +374,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
     actions: {
       rollSave: PCStarshipSheet.#onRollSave,
       postAction: PCStarshipSheet.#onPostAction,
+      rollActionCheck: PCStarshipSheet.#onRollActionCheck,
       generateShields: PCStarshipSheet.#onGenerateShields,
       ventPower: PCStarshipSheet.#onVentPower,
       strike: PCStarshipSheet.#onStrike,
@@ -444,17 +470,55 @@ export class PCStarshipSheet extends StarshipSheetBase {
     await rollCheck({ label: `${this.document.name}: ${label} save`, mod: s.total, speaker: ChatMessage.getSpeaker({ actor: this.document }) });
   }
 
+  /** The crew member rolling for a station: its helmer, or the user's own character. */
+  #roller(st) {
+    const actor = st?.helmerData?.actor ?? game.user.character ?? null;
+    if (!actor) ui.notifications.warn(`Assign a crew member to helm the ${st?.name ?? "station"} first.`);
+    return actor;
+  }
+
+  static async #onRollActionCheck(event, target) {
+    const { st } = this.#station(target);
+    const id = Number(target.dataset.actionId);
+    const a = st?.actions.find((x) => x.id === id) ?? st?.drones?.flatMap((d) => d.actionList).find((x) => x.id === id);
+    const check = a?.check;
+    const skill = target.dataset.skill;
+    if (!check?.skills) return;
+    const actor = this.#roller(st);
+    if (!actor) return;
+    const statistic = skill === "perception" ? actor.perception : actor.skills?.[skill];
+    if (!statistic?.roll) return ui.notifications.warn(`${actor.name} has no ${SKILL_LABELS[skill] ?? skill} skill.`);
+    const dc = check.dc ? { value: check.dc } : check.vs ? targetDC(check.vs) : null;
+    if (check.vs && !dc) ui.notifications.info(`Target the other starship to roll ${a.name} against its ${SAVE_LABELS[check.vs] ?? "Perception"} DC.`);
+    const params = { event, label: `${a.name} (${SKILL_LABELS[skill]})` };
+    if (dc) params.dc = dc;
+    if (check.secret) params.rollMode = "blindroll";
+    await statistic.roll(params);
+  }
+
   static async #onPostAction(event, target) {
     const { st } = this.#station(target);
-    const a = ACTIONS[Number(target.dataset.actionId)];
+    const id = Number(target.dataset.actionId);
+    const a = ACTIONS[id];
     if (!a) return;
-    const malf = st?.malfunctioning ? `<p class="sss-warn">This station is malfunctioning: its station actions can't be used until someone uses Repair Station.</p>` : "";
+    const check = st?.actions.find((x) => x.id === id)?.check ?? st?.drones?.flatMap((d) => d.actionList).find((x) => x.id === id)?.check;
+    let roll = "";
+    if (check?.save) {
+      const helmer = st?.helmerData?.actor ?? game.user.character;
+      const dc = helmerDC(helmer, check);
+      roll = `<p><strong>The target attempts a ${check.basic ? "basic " : ""}${SAVE_LABELS[check.save]} save</strong>${dc ? ` against <strong>DC ${dc.value}</strong> (${esc(helmer.name)}'s ${esc(dc.label)})` : ` against the helmer's ${check.dcClass ? "class" : SKILL_LABELS[check.dcSkill]} DC`}.</p>`;
+    } else if (check?.skills) {
+      const against = check.dc ? ` against DC ${check.dc}` : check.vs ? ` against the target's ${SAVE_LABELS[check.vs] ?? "Perception"} DC` : "";
+      roll = `<p>Roll: ${check.skills.map((s) => SKILL_LABELS[s]).join(" or ")}${against}${check.secret ? " (secret, rolled by the GM)" : ""}.</p>`;
+    }
+    const malf = st?.malfunctioning && id !== 610 ? `<p class="sss-warn">This station is malfunctioning: its station actions can't be used until someone uses Repair Station.</p>` : "";
     await ChatMessage.create({
       speaker: this.#speaker(st),
       content: `<div class="sss-chat">
         <header><strong>${esc(a.name)}</strong> ${costGlyph(a.cost)}</header>
         <div class="sss-traits-list">${a.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>
         <p>${esc(this.document.name)} · ${esc(st?.name ?? "")}${a.freq ? ` · <em>${esc(a.freq)}</em>` : ""}</p>
+        ${roll}
         ${malf}
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
       </div>`
