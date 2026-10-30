@@ -1,7 +1,7 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { effectiveSpeed, novaBlastDamage, partsLabel } from "./logic.mjs";
+import { effectiveSpeed, normalizeHeading, novaBlastDamage, partsLabel } from "./logic.mjs";
 import {
   NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS,
   AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
@@ -122,6 +122,19 @@ function checkButtons(a, station, locked) {
     .join("");
 }
 
+/** Heading 0/180 dropdown; which direction 0 means depends on whether this is the party's or an NPC starship. */
+function headingControl(ship, kind, editable) {
+  const ltr = "→ left to right";
+  const rtl = "← right to left";
+  const [zero, oneEighty] = kind === "pc" ? [ltr, rtl] : [rtl, ltr];
+  return `<label>Heading</label>
+    <select name="ship.heading" data-dtype="Number"${dis(editable)} title="Turns the starship's tokens to match">
+      ${opt(0, `0° ${zero}`, normalizeHeading(ship.heading))}${opt(180, `180° ${oneEighty}`, normalizeHeading(ship.heading))}
+    </select>
+    <label class="sss-malf" title="Tick if this starship's picture points left">
+      <input type="checkbox" name="ship.artFacesLeft"${ship.artFacesLeft ? " checked" : ""}${dis(editable)}> Art faces left</label>`;
+}
+
 function portrait(vm) {
   return `<div class="sss-portrait-box">
     <img src="${esc(vm.img)}" data-action="editImage" alt="" class="sss-portrait" title="${vm.editable ? "Change portrait" : ""}">
@@ -217,7 +230,7 @@ export function renderPCSheet(vm) {
         <div class="sss-movement">
           <div title="${d.speed !== d.speedBase ? `Frame Speed ${d.speedBase}, changed by effects` : ""}"><label>Speed</label><strong>${d.speed}</strong> zones${d.speed !== d.speedBase ? ` <span class="sss-hint">(base ${d.speedBase})</span>` : ""}</div>
           <div title="Frame ${d.sensor.base}${d.sensor.bonus ? ` + scanners ${d.sensor.bonus}` : ""}"><label>Sensor Range</label><strong>${d.sensor.total}</strong> zones</div>
-          <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}" placeholder="e.g. east"${dis(editable)}></div>
+          <div>${headingControl(ship, "pc", editable)}</div>
         </div>
         <div class="sss-iwr">
           <div><label>Immunities</label> <span>${esc(STARSHIP_IMMUNITIES)}</span></div>
@@ -409,7 +422,7 @@ export function renderNPCSheet(vm) {
         <div class="sss-movement">
           <div><label>Speed</label><input type="number" class="sss-small" name="ship.speed" data-dtype="Number" value="${ship.speed}"${dis(editable)}> zones${effectiveSpeed(ship.speed, ship.effects) !== ship.speed ? ` <span class="sss-hint">(now ${effectiveSpeed(ship.speed, ship.effects)})</span>` : ""}</div>
           <div><label>Sensor Range</label><input type="number" class="sss-small" name="ship.sensor" data-dtype="Number" value="${ship.sensor}"${dis(editable)}> zones</div>
-          <div><label>Heading</label><input type="text" name="ship.heading" value="${esc(ship.heading)}"${dis(editable)}></div>
+          <div>${headingControl(ship, "npc", editable)}</div>
         </div>
         <div class="sss-checks">
           ${stat("Perception", signed(vm.perception), "rollPerception")}

@@ -29,7 +29,8 @@ export function defaultPCShip(frameKey = "explorer", level = 1) {
     wrecked: 0,
     destroyed: false,
     acCircumstance: 0,
-    heading: "",
+    heading: 0,
+    artFacesLeft: false,
     traits: "Tech",
     resistances: "",
     notes: "",
@@ -56,7 +57,8 @@ export function defaultNPCShip() {
     compromised: 0,
     wrecked: 0,
     destroyed: false,
-    heading: "",
+    heading: 0,
+    artFacesLeft: false,
     notes: "",
     effects: [],
     weapons: [],
@@ -342,6 +344,18 @@ export function npcWeapon(entry, level, index = 0) {
     area: data.traits.some((t) => /^area/i.test(t)),
     automatic: data.traits.includes("Automatic")
   };
+}
+
+export const normalizeHeading = (heading) => (Number(heading) === 180 ? 180 : 0);
+
+/**
+ * Whether a starship's token should face left (be mirrored). Heading 0 is left-to-right for the party's
+ * starship and right-to-left for NPC starships; ship art is assumed to face right unless `artFacesLeft`.
+ */
+export function tokenFacesLeft(kind, heading, artFacesLeft = false) {
+  const h = normalizeHeading(heading);
+  const left = kind === "pc" ? h === 180 : h === 0;
+  return artFacesLeft ? !left : left;
 }
 
 /** Rank a cantrip is automatically heightened to. */

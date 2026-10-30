@@ -59,6 +59,7 @@ Give your players **Owner** permission on the player starship so they can use it
   - Taking damage while compromised adds 1 to compromised (2 on a critical hit). Compromised 10 destroys the ship.
   - **Restore HP** ends compromised and adds 1 to wrecked.
   - **Hull Integrity Check** rolls the flat check against DC 10 + compromised.
+- **Heading.** Choose 0° or 180°, and the starship's tokens turn to match: the token template plus every placed token linked to the ship. On the party's ship, 0° faces left to right; on NPC starships, 0° faces right to left. Ship art is assumed to point right; tick **Art faces left** for art that points the other way. An NPC token that isn't linked to its actor turns on its own when you change the heading on that token's sheet.
 - **Expansion bays.** Each of the 4 bays has a dropdown of the Tech Core facilities (Data Center, Fabrication Lab, Holo Den, Medical Bay, Passenger Quarters, Science Lab, Crew Quarters, Lounge, Mess Bay), with a link to the chosen facility's benefits on Archives of Nethys.
 - **Notes.**
 

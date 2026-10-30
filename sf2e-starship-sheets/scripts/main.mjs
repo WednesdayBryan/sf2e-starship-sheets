@@ -9,8 +9,8 @@ import {
 } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastDamage, novaEffects, novaWeaponDamage, npcWeapon, ventPowerDice,
-  vehicleSync
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcWeapon,
+  tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -287,6 +287,34 @@ export async function setImage(actor, path, target) {
   if (tokens.length) await canvas.scene.updateEmbeddedDocuments("Token", tokens);
 }
 
+/* ---------------------------------- heading ---------------------------------- */
+
+/** Horizontal token scale for a starship's heading, keeping the token's current size. */
+const headingScale = (actor, texture) => {
+  const ship = getShip(actor);
+  const sign = tokenFacesLeft(ship.kind, ship.heading, ship.artFacesLeft) ? -1 : 1;
+  return sign * Math.abs(Number(texture?.scaleX) || 1);
+};
+
+/**
+ * Mirror a starship's tokens to match its heading: a token-only (unlinked) starship turns just that token;
+ * otherwise the prototype token and every linked token of the starship the user can update.
+ */
+export async function applyHeading(actor) {
+  if (actor.isToken) {
+    const token = actor.token;
+    if (token?.isOwner) await token.update({ "texture.scaleX": headingScale(actor, token.texture) });
+    return;
+  }
+  await actor.update({ "prototypeToken.texture.scaleX": headingScale(actor, actor.prototypeToken.texture) }, { [MODULE_ID]: true });
+  for (const scene of game.scenes ?? []) {
+    const updates = scene.tokens
+      .filter((t) => t.actorId === actor.id && t.actorLink && t.isOwner)
+      .map((t) => ({ _id: t.id, "texture.scaleX": headingScale(actor, t.texture) }));
+    if (updates.length) await scene.updateEmbeddedDocuments("Token", updates);
+  }
+}
+
 /* ---------------------------------- dialogs ---------------------------------- */
 
 async function numberDialog(title, fields, okLabel = "Apply") {
@@ -383,9 +411,12 @@ class StarshipSheetBase extends ActorSheetV2 {
       if (key.startsWith("ship.")) fu.setProperty(ship, key.slice(5), value);
       else update[key] = value;
     }
+    ship.heading = normalizeHeading(ship.heading);
+    ship.artFacesLeft = !!ship.artFacesLeft;
     this.normalizeShip(ship, before, update);
     update[FLAG] = ship;
     await actor.update(update, { [MODULE_ID]: true });
+    if (ship.heading !== normalizeHeading(before.heading) || ship.artFacesLeft !== !!before.artFacesLeft) await applyHeading(actor);
   }
 
   normalizeShip() {}
@@ -1210,6 +1241,8 @@ function npcActorData({ name, level }) {
       details: { level: { value: level } },
       traits: { value: ["tech"], size: { value: "med" } }
     },
+    // Heading 0 is right-to-left for NPC starships.
+    prototypeToken: { texture: { scaleX: -1 } },
     flags: { [MODULE_ID]: { ship }, core: { sheetClass: `${MODULE_ID}.NPCStarshipSheet` } }
   };
 }
