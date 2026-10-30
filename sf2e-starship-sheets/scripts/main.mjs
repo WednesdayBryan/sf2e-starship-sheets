@@ -6,7 +6,7 @@
 import { ACTIONS, AON, FRAMES, MODULE_ID, NPC_STATIONS, SAVE_LABELS, SKILL_LABELS } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, ventPowerDice, vehicleSync
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, novaBlastFormula, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -38,14 +38,31 @@ function spellcastingEntry(actor) {
   return entries.sort((x, y) => y.statistic.check.mod - x.statistic.check.mod)[0] ?? null;
 }
 
+/** The solarian's solar weapon and solar flare Strikes (granted by the system while attuned). */
+function solarStrikes(actor) {
+  const strikes = actor?.system?.actions ?? [];
+  const find = (slug) => {
+    const index = strikes.findIndex((s) => s.type === "strike" && (s.slug === slug || s.item?.slug === slug));
+    return index < 0 ? null : { index, strike: strikes[index] };
+  };
+  return { weapon: find("solar-weapon"), flare: find("solar-flare") };
+}
+
 function crewInfo(uuid) {
   const a = uuid ? fromUuidSync(uuid) : null;
   if (!a) return null;
   const att = a.system?.proficiencies?.attacks ?? {};
+  const solar = solarStrikes(a);
+  const flareDamage = solar.flare?.strike.item?.system?.damage;
   return {
     name: a.name,
     actor: a,
     spellAttack: spellcastingEntry(a)?.statistic.check.mod ?? null,
+    str: a.system?.abilities?.str?.mod ?? 0,
+    solarWeapon: solar.weapon ? { variants: solar.weapon.strike.variants.map((v) => v.label), label: solar.weapon.strike.label } : null,
+    solarFlare: solar.flare
+      ? { attack: solar.flare.strike.totalModifier, die: flareDamage?.die ?? "d8", dice: flareDamage?.dice ?? 1, type: flareDamage?.damageType ?? "bludgeoning" }
+      : null,
     pilotDC: a.skills?.piloting?.dc?.value ?? null,
     dex: a.system?.abilities?.dex?.mod ?? 0,
     level: a.level ?? 0,
@@ -385,6 +402,10 @@ export class PCStarshipSheet extends StarshipSheetBase {
       spellAttack: PCStarshipSheet.#onSpellAttack,
       spellDamage: PCStarshipSheet.#onSpellDamage,
       castSpell: PCStarshipSheet.#onCastSpell,
+      novaStrike: PCStarshipSheet.#onNovaStrike,
+      novaDamage: PCStarshipSheet.#onNovaDamage,
+      novaBlast: PCStarshipSheet.#onNovaBlast,
+      novaBlastDamage: PCStarshipSheet.#onNovaBlastDamage,
       generateShields: PCStarshipSheet.#onGenerateShields,
       ventPower: PCStarshipSheet.#onVentPower,
       strike: PCStarshipSheet.#onStrike,
@@ -575,6 +596,60 @@ export class PCStarshipSheet extends StarshipSheetBase {
       flavor: `<strong>${name}</strong> (rank ${input.rank}) on ${esc(ship.name)}: +${roll.total} ${spell.restores === "sp" ? "Shield" : "Hull"} Points. ${esc(result.notes.join(" "))} ${slot}`
     });
     await writeState(ship, data, result);
+  }
+
+  /** The helmer's solar weapon Strike, or a warning when they don't have one. */
+  #solar(target, kind) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    if (!actor) return {};
+    const found = solarStrikes(actor)[kind];
+    if (!found) ui.notifications.warn(`${actor.name} has no ${kind === "weapon" ? "solar weapon" : "solar flare"} Strike. Check their stellar attunement on their character sheet.`);
+    return { actor, found };
+  }
+
+  /** Nova Strike / Nova Surge: the solarian's own solar weapon Strike, scaled to the starship. */
+  static async #onNovaStrike(event, target) {
+    const { found } = this.#solar(target, "weapon");
+    await found?.strike.variants?.[Number(target.dataset.map) || 0]?.roll({ event });
+  }
+
+  static async #onNovaDamage(event, target) {
+    const { found } = this.#solar(target, "weapon");
+    if (!found) return;
+    await (target.dataset.critical === "1" ? found.strike.critical?.({ event }) : found.strike.damage?.({ event }));
+  }
+
+  /** Nova Blast: the solar flare's attack bonus, rolled against the targeted starship's AC (range is in zones). */
+  static async #onNovaBlast(event, target) {
+    const { actor, found } = this.#solar(target, "flare");
+    if (!found) return;
+    const mi = Number(target.dataset.map) || 0;
+    const penalty = [0, -5, -10][mi];
+    await rollCheck({
+      label: `Nova Blast${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: found.strike.totalModifier + penalty,
+      speaker: ChatMessage.getSpeaker({ actor }),
+      dc: targetAC()
+    });
+  }
+
+  static async #onNovaBlastDamage(event, target) {
+    const { actor } = this.#solar(target, "flare");
+    if (!actor) return;
+    const flare = crewInfo(actor.uuid)?.solarFlare;
+    if (!flare) return;
+    const critical = target.dataset.critical === "1";
+    const photon = flare.type === "fire";
+    await rollDamage({
+      formula: novaBlastFormula(flare, crewInfo(actor.uuid).str),
+      type: flare.type,
+      critical,
+      speaker: ChatMessage.getSpeaker({ actor }),
+      flavor: `<strong>Nova Blast</strong> (${photon ? "photon" : "graviton"}) ${critical ? "critical " : ""}damage${critical
+        ? photon ? " — the target also takes 1d6 persistent fire damage." : " — the target is off-kilter and its Speed is reduced by 1 zone for 1 round."
+        : ""}`
+    });
   }
 
   static async #onPostAction(event, target) {

@@ -1,6 +1,7 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
+import { novaBlastFormula, novaBlastRange } from "./logic.mjs";
 import { AON, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
@@ -35,6 +36,32 @@ function spellButtons(a, s) {
   return `${attacks}
     <button type="button" class="sss-roll" data-action="spellDamage" data-station="${i}"${off} title="Rank ${rank} cantrip">${1 + rank}d4 force</button>
     <button type="button" class="sss-roll" data-action="spellDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
+}
+
+/** Starship Weapon Crystal buttons: the solarian's own solar weapon and solar flare Strikes. */
+function novaButtons(a, s) {
+  if (![531, 533, 534, 536].includes(a.id)) return "";
+  const i = s.index;
+  const off = s.malfunctioning ? " disabled" : "";
+  const c = s.helmerData;
+  if (a.id === 531) return `<span class="sss-hint">uses the helmer's stellar attunement</span>`;
+  if (!c || c.missing) return `<span class="sss-hint">Assign a solarian</span>`;
+  if (a.id === 533 || a.id === 536) {
+    if (!c.solarWeapon) return `<span class="sss-hint">${esc(c.name)} has no solar weapon Strike</span>`;
+    const variants = a.id === 536 ? c.solarWeapon.variants.slice(0, 1) : c.solarWeapon.variants;
+    return `${variants
+      .map((v, mi) => `<button type="button" class="sss-strike" data-action="novaStrike" data-station="${i}" data-map="${mi}"${off} title="${a.id === 536 ? "No multiple attack penalty" : "Solar weapon Strike"}">${esc(v)}</button>`)
+      .join("")}
+      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}"${off}>Damage</button>
+      <button type="button" class="sss-roll" data-action="novaDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
+  }
+  if (!c.solarFlare) return `<span class="sss-hint">${esc(c.name)} has no solar flare Strike</span>`;
+  const f = c.solarFlare;
+  return `${[0, -5, -10]
+    .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaBlast" data-station="${i}" data-map="${mi}"${off} title="Nova flare Strike vs target's AC">${signed(f.attack + pen)}</button>`)
+    .join("")}
+    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}"${off} title="Range increment ${novaBlastRange(f)} zones">${esc(novaBlastFormula(f, c.str))} ${esc(f.type)}</button>
+    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
 }
 
 function actionRow(a, { station, stationName, helmerName, disabled, extraHtml = "" }) {
@@ -241,7 +268,7 @@ function stationCard(s, vm) {
   const rowOpts = { station: i, stationName: s.def.name, helmerName: s.helmerData?.name, disabled: s.malfunctioning };
   const actions = `<ul class="sss-actions">${s.actions
     .filter((a) => a.id !== 17 && a.id !== 19)
-    .map((a) => actionRow(a, rowOpts))
+    .map((a) => actionRow(a, { ...rowOpts, extraHtml: novaButtons(a, s) }))
     .join("")}</ul>`;
   const spells = s.spells
     ? `<div class="sss-sub-list"><label>Spell repository <span class="sss-hint">(the helmer casts with their own spell slots)</span></label><ul class="sss-actions">${s.spells

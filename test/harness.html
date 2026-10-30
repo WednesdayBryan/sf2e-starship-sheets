@@ -41,7 +41,8 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
-  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, ranks: { simple: 2, martial: 1, advanced: 0 } },
+  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, ranks: { simple: 2, martial: 1, advanced: 0 },
+    solarWeapon: { label: "Solar Weapon", variants: ["+14", "+9", "+4"] }, solarFlare: { attack: 12, dice: 1, die: "d6", type: "fire" } },
   scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
   mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
 };
@@ -229,6 +230,24 @@ try {
   globalThis.game.user.targets = new Set([{ actor: { type: "npc", name: "Raider", attributes: { ac: { value: 20 } } } }]);
   const mapBtn = conduit.querySelectorAll('[data-action="spellAttack"]')[1];
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.spellAttack.call(sheet, {}, mapBtn);
+  // Starship Weapon Crystal: solar weapon and solar flare
+  const gunnery = document.querySelector("#pc .sss-gunnery");
+  const row = (name) => [...gunnery.querySelectorAll("li.sss-action")].find((li) => li.querySelector(".sss-action-name").textContent.includes(name));
+  check("Nova Strike buttons from solar weapon", [...row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent), ["+14", "+9", "+4"]);
+  check("Nova Surge has one Strike (no MAP)", [...row("Nova Surge").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent), ["+14"]);
+  check("Nova Blast buttons and damage", [[...row("Nova Blast").querySelectorAll('[data-action="novaBlast"]')].map((b) => b.textContent), row("Nova Blast").querySelector('[data-action="novaBlastDamage"]').textContent.trim()],
+    [["+12", "+7", "+2"], "1d6+4 fire"]);
+  const strikeRolls = [];
+  const solarian = { name: "Grix", uuid: "gunner", system: { abilities: { str: { mod: 4 } }, actions: [
+    { type: "strike", slug: "fist" },
+    { type: "strike", slug: "solar-weapon", label: "Solar Weapon", variants: [0, 1, 2].map((n) => ({ label: `v${n}`, roll: async () => strikeRolls.push(`weapon v${n}`) })), damage: async () => strikeRolls.push("weapon damage") },
+    { type: "strike", slug: "solar-flare", totalModifier: 12, item: { system: { damage: { dice: 1, die: "d6", damageType: "fire" } } }, variants: [] }
+  ] } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "gunner" ? solarian : uuid === "mystic" ? mystic : null);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')[1]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"]'));
+  check("Nova Strike rolls the solar weapon's 2nd attack, then its damage", strikeRolls, ["weapon v1", "weapon damage"]);
+  check("Nova Blast formula with Str +4 / -1", [main.PCStarshipSheet && (await import("../sf2e-starship-sheets/scripts/logic.mjs")).novaBlastFormula({ dice: 1, die: "d8" }, 4), (await import("../sf2e-starship-sheets/scripts/logic.mjs")).novaBlastFormula({ dice: 1, die: "d6" }, -1)], ["1d8+4", "1d6-1"]);
   check("Spell attack rolls caster's spellcasting vs target AC 20 with MAP -5", { label: spellRolls[0].label, dc: spellRolls[0].dc, map: spellRolls[0].modifiers?.[0]?.modifier },
     { label: "Cosmic Cannon: spell attack (MAP -5)", dc: { value: 20, label: "Raider's AC" }, map: -5 });
 } catch (err) {

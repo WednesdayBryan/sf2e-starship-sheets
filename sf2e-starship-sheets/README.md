@@ -41,6 +41,11 @@ Give your players **Owner** permission on the player starship so they can use it
   - **Cosmic Bombardment** asks for a rank and the actions spent, then rolls its automatic-hit missiles.
   - **Cosmic Fortification** and **Cosmic Repairs** ask for a rank, roll, and restore Shield Points or Hull Points. They affect the targeted starship if you own it; otherwise they affect this one.
   - Chat reminds the caster which rank of spell slot to expend.
+- **Starship Weapon Crystal (solarian).** The gunnery's helmer uses their own solar armaments, with the stellar attunement set on their character sheet.
+  - **Nova Strike** rolls the solarian's solar weapon Strike: three attack buttons plus Damage and Crit. Photon fire damage and the graviton note come from the system.
+  - **Nova Surge** rolls that Strike once, without the multiple attack penalty.
+  - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Its damage is the flare's die plus Strength (graviton 1d8 bludgeoning, range 2 zones; photon 1d6 fire, range 4 zones), and the critical effect is noted in chat.
+  - If the solar weapon has reach, the rules give the nova weapon a d10 damage die instead. Use the system's two-hand d10 toggle on the character sheet for that.
 - **Hull and shields:**
   - **Damage** takes damage from SP first; bypassing damage skips SP.
   - At 0 HP the ship becomes compromised, adding its wrecked value, and every station becomes malfunctioning.

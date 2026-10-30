@@ -263,6 +263,15 @@ export function actionCheck(id, stationType) {
   return { skills: c.skills, vs: c.vs ?? null, dc: c.dc ?? null, secret: !!c.secret };
 }
 
+/** Nova Blast damage: the solar flare's die plus Strength (graviton 1d8 bludgeoning, photon 1d6 fire). */
+export function novaBlastFormula(flare, str) {
+  const s = Math.trunc(str) || 0;
+  return `${flare.dice ?? 1}${flare.die ?? "d8"}${s ? (s > 0 ? `+${s}` : `${s}`) : ""}`;
+}
+
+/** Nova Blast range increment in zones by attunement. */
+export const novaBlastRange = (flare) => (flare?.type === "fire" ? 4 : 2);
+
 /** Rank a cantrip is automatically heightened to. */
 export const cantripRank = (level) => Math.max(1, Math.ceil(level / 2));
 
