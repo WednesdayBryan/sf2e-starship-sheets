@@ -152,7 +152,7 @@ document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
 // Render an NPC sheet (Sword-class Attack Vessel)
 const npcShip = { kind: "npc", sp: 6, spMax: 6, fortify: 5, acCircumstance: 1, sensor: 4, speed: 4, compromised: 0, wrecked: 0, destroyed: false, heading: "west", notes: "",
   stations: [{ type: "gunnery", name: "coilgun, light laser cannon", malfunctioning: false }, { type: "pilot", name: "Ambush from Hell, Boost Thrusters, Change Heading, ramming prow", malfunctioning: true },
-    { type: "generator", name: "", malfunctioning: false }] };
+    { type: "generator", name: "", malfunctioning: false }, { type: "conduit", name: "", malfunctioning: false }], spellTier: "high" };
 window.__renderNPC = (over) => renderNPCSheet({ ...window.__npcVM, ship: { ...window.__npcVM.ship, ...over } });
 document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window.__npcVM = {
   name: "Sword-class Attack Vessel", img: "", editable: true, isGM: true, ship: npcShip, level: 2, size: "Medium", traits: ["Tech"],
@@ -182,6 +182,9 @@ eq("Party heading dropdown", headingText("#pc"), ["0° → left to right", "180�
 eq("NPC heading dropdown", headingText("#npc"), ["0° ← right to left", "180° → left to right"]);
 eq("NPC AC shows Evade +1 (17 + 1 = 18)", [document.querySelector("#npc .sss-ac-value").textContent.trim(), document.querySelector('#npc [name="ship.acCircumstance"]').value], ["18", "1"]);
 eq("NPC Evade and Stick to Cover have AC buttons", [...document.querySelectorAll('#npc [data-action="npcSetEvade"]')].map((b) => b.textContent.trim()), ["AC +1", "AC +2", "AC +1"]);
+const conduitRow = [...document.querySelectorAll("#npc .sss-npc-station")].find((li) => li.querySelector("select").value === "conduit");
+eq("NPC conduit: Cosmic Cannon attacks from level 2 High (+10) and rank 1 damage", [[...conduitRow.querySelectorAll('[data-action="npcSpellAttack"]')].map((b) => b.textContent), conduitRow.querySelector('[data-action="npcSpellDamage"]').textContent.trim()], [["+10", "+5", "+0"], "2d4 force"]);
+eq("NPC conduit: Cast for Bombardment, Fortification, Repairs", [...conduitRow.querySelectorAll('[data-action="npcCastSpell"]')].map((b) => b.dataset.spell), ["503", "505", "506"]);
 eq("Add-weapon picker lists 17 weapons + breaching ram", npcEl.querySelectorAll('[data-action-change="addNPCWeapon"] option').length, 19);
 const ram = npcWeapon({ key: "breaching-ram", attackTier: "moderate", damageTier: "high" }, 3);
 eq("Jinsul Breacher (level 3) breaching ram = +10, 1d10+6 piercing, melee", [ram.attack, ram.formula, ram.type, ram.range], [10, "1d10+6", "piercing", 0]);
@@ -349,6 +352,9 @@ try {
   await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcRepairSelf.call(npcSheet);
   check("Repair Self: +3 HP (level 3) and the gunnery stops malfunctioning",
     [npcUpdates[1]["system.attributes.hp.value"], npcUpdates[1]["flags.sf2e-starship-sheets.ship"].stations.map((s) => s.malfunctioning)], [13, [false, false]]);
+  npcActor.flags["sf2e-starship-sheets"].ship.spellTier = "moderate";
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcSpellAttack.call(npcSheet, {}, { dataset: { map: "1" } });
+  check("NPC Cosmic Cannon: level 3 Moderate (+9) with MAP -5 vs target", strikeLog.at(-1).includes("Cosmic Cannon: spell attack (MAP -5)") && /AC \d+/.test(strikeLog.at(-1)), true);
   // Heading flips tokens
   const protoUpdates = [];
   const sceneUpdates = [];

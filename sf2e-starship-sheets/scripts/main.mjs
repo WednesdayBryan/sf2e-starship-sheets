@@ -9,7 +9,7 @@ import {
 } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcWeapon,
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon,
   tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
@@ -928,6 +928,10 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       npcCommonAction: NPCStarshipSheet.#onCommonAction,
       npcFortify: NPCStarshipSheet.#onFortify,
       npcSetEvade: NPCStarshipSheet.#onSetEvade,
+      npcSpellCard: NPCStarshipSheet.#onSpellCard,
+      npcSpellAttack: NPCStarshipSheet.#onSpellAttack,
+      npcSpellDamage: NPCStarshipSheet.#onSpellDamage,
+      npcCastSpell: NPCStarshipSheet.#onCastSpell,
       npcRepairSelf: NPCStarshipSheet.#onRepairSelf,
       npcWeaponStrike: NPCStarshipSheet.#onWeaponStrike,
       npcWeaponDamage: NPCStarshipSheet.#onWeaponDamage,
@@ -1002,6 +1006,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
 
   normalizeShip(ship) {
     ship.acCircumstance = Number(ship.acCircumstance) || 0;
+    if (!["extreme", "high", "moderate"].includes(ship.spellTier)) ship.spellTier = "high";
     for (const k of ["sp", "spMax", "fortify", "sensor", "speed", "wrecked"]) ship[k] = Math.max(0, Number(ship[k]) || 0);
     ship.sp = Math.min(ship.sp, ship.spMax);
   }
@@ -1037,6 +1042,84 @@ export class NPCStarshipSheet extends StarshipSheetBase {
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
       </div>`
     });
+  }
+
+  /* ----- magic conduit: starship spells at the NPC's level ----- */
+
+  get #spellRank() {
+    return cantripRank(this.document.level ?? 1);
+  }
+
+  #conduitMalfunctioning() {
+    const malf = this.ship.stations.some((st) => st.type === "conduit" && st.malfunctioning);
+    if (malf) ui.notifications.warn(`${this.document.name}'s magic conduit is malfunctioning.`);
+    return malf;
+  }
+
+  static async #onSpellCard(event, target) {
+    const a = ACTIONS[Number(target.dataset.spell)];
+    if (!a) return;
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      content: `<div class="sss-chat"><header><strong>${esc(a.name)}</strong> ${costGlyph(a.cost)}</header>
+        <p>${esc(this.document.name)} · Magic Conduit · rank ${this.#spellRank}</p>
+        <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a></div>`
+    });
+  }
+
+  /** Cosmic Cannon: spell attack (GM Core table at the ship's level) against the targeted starship's AC. */
+  static async #onSpellAttack(event, target) {
+    this.#conduitMalfunctioning();
+    const mi = Number(target.dataset.map) || 0;
+    const penalty = [0, -5, -10][mi];
+    await rollCheck({
+      label: `Cosmic Cannon: spell attack${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: npcSpellAttack(this.document.level, this.ship.spellTier) + penalty,
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      dc: targetAC()
+    });
+  }
+
+  static async #onSpellDamage(event, target) {
+    const rank = this.#spellRank;
+    const critical = target.dataset.critical === "1";
+    await rollDamage({
+      ...cosmicSpell(504, rank),
+      critical,
+      speaker: ChatMessage.getSpeaker({ actor: this.document }),
+      flavor: `<strong>Cosmic Cannon</strong> (rank ${rank}) ${critical ? "critical " : ""}damage`
+    });
+  }
+
+  /** Cosmic Bombardment, Fortification or Repairs at a chosen rank (default: the ship's highest). */
+  static async #onCastSpell(event, target) {
+    this.#conduitMalfunctioning();
+    const id = Number(target.dataset.spell);
+    const name = ACTIONS[id].name;
+    const fields = [{ name: "rank", label: "Spell rank", value: this.#spellRank }];
+    if (id === 503) fields.push({ name: "actions", label: "Actions spent (1–3)", value: 3 });
+    const input = await numberDialog(`${name}: ${this.document.name}`, fields, "Cast");
+    if (!input) return;
+    const spell = cosmicSpell(id, input.rank, input.actions);
+    const speaker = ChatMessage.getSpeaker({ actor: this.document });
+    if (id === 503) {
+      return rollDamage({
+        formula: spell.formula, type: spell.type, speaker,
+        flavor: `<strong>Cosmic Bombardment</strong> (rank ${input.rank}): ${spell.missiles} missile${spell.missiles > 1 ? "s" : ""}, automatically hit`
+      });
+    }
+    // Restores the targeted starship if it's one the user can update (an ally), otherwise this one.
+    const targeted = [...game.user.targets][0]?.actor;
+    const ship = targeted && isStarship(targeted) && targeted.isOwner ? targeted : this.document;
+    const roll = new Roll(spell.formula);
+    await roll.evaluate();
+    const { ship: data, spMax, state } = damageState(ship);
+    const result = spell.restores === "sp" ? applyShieldGain(state, roll.total, spMax) : applyHullRepair(state, roll.total);
+    await roll.toMessage({
+      speaker,
+      flavor: `<strong>${name}</strong> (rank ${input.rank}) on ${esc(ship.name)}: +${roll.total} ${spell.restores === "sp" ? "Shield" : "Hull"} Points. ${esc(result.notes.join(" "))}`
+    });
+    await writeState(ship, data, result);
   }
 
   /** Evade / Stick to Cover: set the circumstance bonus to AC. */

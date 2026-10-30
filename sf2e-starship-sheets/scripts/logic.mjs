@@ -3,7 +3,7 @@
  */
 import {
   ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, NPC_WEAPONS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
-  STRIKE_DAMAGE_EXPRESSION,
+  STRIKE_DAMAGE_EXPRESSION, SPELL_ATTACK, SPELL_TIERS,
   UNIVERSAL_ACTIONS, UPGRADES, WEAPONS
 } from "./data.mjs";
 
@@ -52,6 +52,7 @@ export function defaultNPCShip() {
     sp: 0,
     spMax: 0,
     acCircumstance: 0,
+    spellTier: "high",
     fortify: 0,
     sensor: 4,
     speed: 4,
@@ -357,6 +358,13 @@ export function tokenFacesLeft(kind, heading, artFacesLeft = false) {
   const h = normalizeHeading(heading);
   const left = kind === "pc" ? h === 180 : h === 0;
   return artFacesLeft ? !left : left;
+}
+
+/** An NPC starship's spell attack modifier from GM Core's table at its level (default tier: high). */
+export function npcSpellAttack(level, tier = "high") {
+  const row = clamp(int(level, 0), -1, 24) + 1;
+  const t = SPELL_TIERS.includes(tier) ? tier : "high";
+  return SPELL_ATTACK[row][SPELL_TIERS.indexOf(t)];
 }
 
 /** Rank a cantrip is automatically heightened to. */

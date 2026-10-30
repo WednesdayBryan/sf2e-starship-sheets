@@ -75,6 +75,11 @@ Give your players **Owner** permission on the player starship so they can use it
 - When the weapon's die matches the table's damage expression, the table's expression is used exactly.
 - The list also has the **Breaching Ram**, a melee weapon (d10 piercing, same zone) from the Jinsul Breacher. It defaults to Moderate attack and High damage, which reproduces that stat block (+10, 1d10+6 at level 3).
 
+**Magic conduit spells.** An NPC starship with a Magic Conduit battle station gets the starship spell repository under that station.
+- **Cosmic Cannon** has spell attack buttons (with the multiple attack penalty) that use GM Core's Spell Attack Modifier table at the ship's level. Pick the tier: Extreme, High (the default, for primary casters) or Moderate. Damage and Crit buttons roll the cantrip at the ship's rank (half its level, rounded up).
+- **Cosmic Bombardment**, **Cosmic Fortification** and **Cosmic Repairs** have Cast buttons that ask for a rank (defaulting to the ship's highest) and roll. Fortification and Repairs restore the targeted allied starship, or this one.
+- A malfunctioning conduit greys these out and warns if they're used.
+
 **Evade and cover.** The NPC sheet's AC has a circumstance dropdown: none, Evade +1 / Stick to Cover +1, or Evade +2. The Evade and Stick to Cover actions have AC buttons that set it. The big AC number includes the bonus, and the party's Strikes, spell attacks and nova attacks rolled from the starship sheet compare against the raised AC. Set it back to none when the effect ends.
 
 **Station actions.** Each NPC battle station lists Tech Core's common NPC starship actions. Click a name to post it to chat with its Archives of Nethys link.

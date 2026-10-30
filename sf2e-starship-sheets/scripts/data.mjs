@@ -383,6 +383,15 @@ export const STRIKE_DAMAGE_AVERAGE = [
   [68, 52, 44, 35]
 ];
 
+/** GM Core Spell DC and Spell Attack Modifier table (pg. 126): spell attack modifier by level (-1 to 24). */
+export const SPELL_TIERS = ["extreme", "high", "moderate"];
+export const SPELL_ATTACK = [
+  [11, 8, 5], [11, 8, 5], [12, 9, 6], [14, 10, 7], [15, 12, 9], [17, 13, 10], [18, 14, 11], [19, 16, 13], [21, 17, 14],
+  [22, 18, 15], [24, 20, 17], [25, 21, 18], [26, 22, 19], [28, 24, 21], [29, 25, 22], [31, 26, 23], [32, 28, 25],
+  [33, 29, 26], [35, 30, 27], [36, 32, 29], [38, 33, 30], [39, 34, 31], [40, 36, 33], [42, 37, 34], [43, 38, 35],
+  [44, 40, 37]
+];
+
 /** The Strike Damage table's own damage expressions, used as-is when a weapon has the same die. */
 export const STRIKE_DAMAGE_EXPRESSION = [
   ["1d6+1", "1d4+1", "1d4", "1d4"], ["1d6+3", "1d6+2", "1d4+2", "1d4+1"], ["1d8+4", "1d6+3", "1d6+2", "1d4+2"],

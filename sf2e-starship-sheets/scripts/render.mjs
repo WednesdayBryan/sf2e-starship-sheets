@@ -1,9 +1,9 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { effectiveSpeed, normalizeHeading, novaBlastDamage, partsLabel } from "./logic.mjs";
+import { effectiveSpeed, normalizeHeading, novaBlastDamage, npcSpellAttack, partsLabel } from "./logic.mjs";
 import {
-  NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS,
+  NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS, SPELL_TIERS, ACTIONS,
   AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
@@ -480,6 +480,32 @@ function npcActionList(actions, { ship, disabled = false, level, perception }) {
     .join("")}</ul>`;
 }
 
+/**
+ * The starship spell repository for an NPC magic conduit: Cosmic Cannon attacks with the spell attack modifier
+ * from GM Core's table at the ship's level, and Cast buttons for the other spells.
+ */
+function npcSpellList(vm, disabled) {
+  const { ship, editable } = vm;
+  const off = disabled ? " disabled" : "";
+  const rank = Math.max(1, Math.ceil((vm.level ?? 1) / 2));
+  const attack = npcSpellAttack(vm.level, ship.spellTier);
+  const tier = `<select name="ship.spellTier"${dis(editable)} title="GM Core spell attack tier">${SPELL_TIERS.map((t) => opt(t, NPC_TIER_LABELS[t], ship.spellTier ?? "high")).join("")}</select>`;
+  const row = (id, buttons) => {
+    const a = ACTIONS[id];
+    return `<li class="sss-action${disabled ? " is-disabled" : ""}">
+      <button type="button" class="sss-action-name" data-action="npcSpellCard" data-spell="${id}" title="Post to chat">${costGlyph(a.cost)} ${esc(a.name)}</button>
+      ${buttons}${link(a.url, "↗")}</li>`;
+  };
+  return `<div class="sss-npc-actions sss-npc-spells">
+    <label class="sss-section">Spell repository <span class="sss-hint">spell attack ${signed(attack)} · rank ${rank}</span> ${tier}</label>
+    <ul class="sss-actions">
+      ${row(504, `${[0, -5, -10].map((pen, mi) => `<button type="button" class="sss-strike" data-action="npcSpellAttack" data-map="${mi}"${off} title="Spell attack vs target's AC">${signed(attack + pen)}</button>`).join("")}
+        <button type="button" class="sss-roll" data-action="npcSpellDamage"${off}>${1 + rank}d4 force</button>
+        <button type="button" class="sss-roll" data-action="npcSpellDamage" data-critical="1"${off}>Crit</button>`)}
+      ${[503, 505, 506].map((id) => row(id, `<button type="button" class="sss-roll" data-action="npcCastSpell" data-spell="${id}"${off} title="Choose a rank and roll">Cast</button>`)).join("")}
+    </ul></div>`;
+}
+
 /** Starship weapons on an NPC starship, with attack and damage from its level. */
 function npcWeaponsBlock(vm) {
   const { ship, editable } = vm;
@@ -526,6 +552,7 @@ function npcCombat(vm) {
       <label class="sss-malf"><input type="checkbox" name="ship.stations.${i}.malfunctioning"${st.malfunctioning ? " checked" : ""}${dis(editable)}> Malfunctioning</label>
       ${editable ? `<button type="button" class="sss-x" data-action="removeNPCStation" data-index="${i}" title="Remove">✕</button>` : ""}
       ${npcActionList(NPC_STATION_ACTIONS[st.type] ?? [], { ship, disabled: st.malfunctioning })}
+      ${st.type === "conduit" ? npcSpellList(vm, st.malfunctioning) : ""}
     </li>`
     )
     .join("");
