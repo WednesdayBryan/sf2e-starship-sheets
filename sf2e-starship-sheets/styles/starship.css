@@ -14,13 +14,17 @@
   --sss-warn: #f0b84a;
 }
 
-.sf2e-starship-sheets .window-content {
+.application.sf2e-starship-sheets .window-content {
   background: var(--sss-bg);
   color: var(--sss-text);
   padding: 0;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .sss-sheet {
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;

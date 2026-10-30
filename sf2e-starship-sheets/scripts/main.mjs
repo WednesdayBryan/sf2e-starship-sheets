@@ -187,8 +187,11 @@ class StarshipSheetBase extends ActorSheetV2 {
     return this.renderSheet(context);
   }
 
+  /** Redraw the sheet, keeping the scroll position so edits near the bottom don't jump to the top. */
   _replaceHTML(result, content) {
+    const scrollTop = content.scrollTop;
     content.innerHTML = result;
+    content.scrollTop = scrollTop;
   }
 
   _onRender(context, options) {
