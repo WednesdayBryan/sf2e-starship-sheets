@@ -3,7 +3,7 @@
  */
 import {
   ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, NPC_WEAPONS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
-  STRIKE_DAMAGE_EXPRESSION, SPELL_ATTACK, SPELL_TIERS,
+  STRIKE_DAMAGE_EXPRESSION, SPELL_ATTACK, SPELL_TIERS, CREATURE_DC,
   UNIVERSAL_ACTIONS, UPGRADES, WEAPONS
 } from "./data.mjs";
 
@@ -95,11 +95,85 @@ export function weaponSlots(station) {
 }
 
 /** Attack modifier a crew member gets with a starship weapon category. */
-export function helmerAttack(helmer, category) {
+/**
+ * Test a system predicate (as written in rule elements: strings, arrays meaning "all", and
+ * { or | and | not | nor | gte | gt | lte | lt } objects) against a list of roll options.
+ */
+export function predicateTest(predicate, options) {
+  const set = options instanceof Set ? options : new Set(options);
+  const numeric = (term) => {
+    if (typeof term === "number") return term;
+    for (const o of set) if (o.startsWith(`${term}:`) && Number.isFinite(Number(o.slice(term.length + 1)))) return Number(o.slice(term.length + 1));
+    return Number.isFinite(Number(term)) ? Number(term) : null;
+  };
+  const test = (s) => {
+    if (typeof s === "string") return set.has(s);
+    if (Array.isArray(s)) return s.every(test);
+    if (!s || typeof s !== "object") return false;
+    if ("or" in s) return s.or.some(test);
+    if ("and" in s) return s.and.every(test);
+    if ("nor" in s) return !s.nor.some(test);
+    if ("not" in s) return !test(s.not);
+    for (const op of ["gte", "gt", "lte", "lt", "eq"]) {
+      if (op in s) {
+        const [a, b] = s[op].map(numeric);
+        if (a === null || b === null) return false;
+        return { gte: a >= b, gt: a > b, lte: a <= b, lt: a < b, eq: a === b }[op];
+      }
+    }
+    return false;
+  };
+  return test(Array.isArray(predicate) ? predicate : [predicate]);
+}
+
+/** Roll options describing a starship weapon, in the system's item:… form, so proficiency definitions can match it. */
+export function weaponRollOptions(data) {
+  const slug = (t) => String(t).toLowerCase().split(/[\s(]/)[0];
+  return [
+    "item:type:weapon",
+    data.range === 0 ? "item:melee" : "item:ranged",
+    `item:category:${data.category}`,
+    `item:group:${slug(data.group || "none")}`,
+    ...data.traits.map((t) => `item:trait:${slug(t)}`)
+  ];
+}
+
+/**
+ * A crew member's proficiency rank with a starship weapon: the better of their category rank (simple, martial,
+ * advanced) and any class proficiency whose definition the weapon matches, such as an operative's guns
+ * (ranged weapons with the analog or tech trait).
+ */
+export function helmerRank(helmer, weapon) {
+  if (!helmer) return 0;
+  const options = weaponRollOptions(weapon);
+  const special = (helmer.customAttacks ?? []).filter((c) => predicateTest(c.definition, options)).map((c) => c.rank);
+  return Math.max(helmer.ranks?.[weapon.category] ?? 0, ...special);
+}
+
+export function helmerAttack(helmer, weapon) {
   if (!helmer) return null;
-  const rank = helmer.ranks?.[category] ?? 0;
+  const rank = typeof weapon === "string" ? helmer.ranks?.[weapon] ?? 0 : helmerRank(helmer, weapon);
   const proficiency = rank > 0 ? helmer.level + 2 * rank : 0;
   return helmer.dex + proficiency;
+}
+
+/**
+ * Area Fire shape for an area weapon: a burst of the listed radius centered within the first range increment,
+ * or a cone or line as long as the range increment.
+ */
+export function areaShape(data) {
+  const trait = data.traits.find((t) => /^area/i.test(t));
+  if (!trait) return null;
+  const burst = trait.match(/burst\s+(\d+)/i);
+  if (burst) return `burst ${burst[1]} zone${burst[1] === "1" ? "" : "s"}, centered within ${data.range} zones`;
+  const kind = /cone/i.test(trait) ? "cone" : /line/i.test(trait) ? "line" : "area";
+  return `${data.range}-zone ${kind}`;
+}
+
+/** Weapon specialization damage: 2/3/4 at expert/master/legendary, doubled with greater weapon specialization. */
+export function specializationBonus(helmer, rank) {
+  if (!helmer?.specialization || rank < 2) return 0;
+  return [0, 0, 2, 3, 4][Math.min(rank, 4)] * (helmer.specialization === "greater" ? 2 : 1);
 }
 
 export function mapPenalties(traits) {
@@ -110,7 +184,7 @@ export function mapPenalties(traits) {
  * Derive everything the PC sheet shows.
  * `crew` maps an actor UUID to { name, pilotDC, dex, level, ranks: { simple, martial, advanced } }.
  */
-export function derivePCShip(ship, crew = {}) {
+export function derivePCShip(ship, crew = {}, status = {}) {
   const level = clamp(int(ship.level, 1), 1, 20);
   const frame = FRAMES[ship.frame] ?? FRAMES.explorer;
   const [, hp, spMax, frameAC, fort, ref, will, speed] = frameRow(ship.frame, level);
@@ -131,16 +205,23 @@ export function derivePCShip(ship, crew = {}) {
 
   if (ship.compromised > 0) warnings.push("Compromised: the starship is inoperable and its battle stations are malfunctioning.");
 
+  // Conditions on the starship: off-guard is -2 circumstance to AC; off-kilter is -2 circumstance to attack rolls,
+  // Area Fire / Auto-Fire DCs and Reflex saves.
+  const offGuard = status.offGuard ? -2 : 0;
+  const offKilter = status.offKilter ? -2 : 0;
+  if (offKilter) applyOffKilter(stations);
+
   return {
     level,
     frame: { key: ship.frame, name: frame.name, url: frame.url },
     hpMax: hp,
     spMax,
     sp: clamp(int(ship.sp, 0), 0, spMax),
-    ac: { frame: frameAC, pilotDC, base: acBase, item: acItem, circumstance: acCirc, total: acBase + acItem + acCirc },
+    ac: { frame: frameAC, pilotDC, base: acBase, item: acItem, circumstance: acCirc, offGuard, total: acBase + acItem + acCirc + offGuard },
+    conditions: { offGuard: !!offGuard, offKilter: !!offKilter },
     saves: {
       fortitude: { base: fort, item: fortItem, total: fort + fortItem },
-      reflex: { base: ref, item: refItem, total: ref + refItem },
+      reflex: { base: ref, item: refItem, offKilter, total: ref + refItem + offKilter },
       will: { base: will, item: willItem, total: will + willItem }
     },
     speed: effectiveSpeed(speed, ship.effects),
@@ -151,6 +232,31 @@ export function derivePCShip(ship, crew = {}) {
     warnings
   };
 }
+
+/** Off-kilter: -2 to the starship's weapon attack rolls and Area Fire / Auto-Fire DCs. */
+function applyOffKilter(stations) {
+  for (const st of stations) {
+    for (const w of st.weaponsView ?? []) {
+      if (w.attack !== null && w.attack !== undefined) w.attack -= 2;
+      if (w.saveDC !== null && w.saveDC !== undefined) w.saveDC -= 2;
+      w.offKilter = true;
+    }
+  }
+}
+
+/** The same off-kilter penalty for an NPC starship's weapon. */
+export function npcWeaponOffKilter(w) {
+  if (w.missing) return w;
+  return { ...w, attack: w.attack - 2, saveDC: w.saveDC - 2, offKilter: true };
+}
+
+/**
+ * Conditions a station action's own check result puts on the target starship, by degree of success
+ * (3 critical success, 2 success). Juke: off-guard on a success; off-kilter and off-guard on a critical success.
+ */
+export const ACTION_OUTCOME_CONDITIONS = {
+  599: { 3: ["off-kilter", "off-guard"], 2: ["off-guard"] }
+};
 
 function deriveStation(st, index, level, crew, warnings) {
   const def = STATIONS[st.type];
@@ -241,21 +347,37 @@ function deriveWeapon(w, wi, st, bonuses, helmerData) {
   const data = WEAPONS[w.key];
   if (!data) return { index: wi, key: w.key, name: w.key ?? "Unknown weapon", missing: true };
   const dice = bonuses.damageDice;
-  const helmerMod = helmerAttack(helmerData && !helmerData.missing ? helmerData : null, data.category);
+  const helmer = helmerData && !helmerData.missing ? helmerData : null;
+  const rank = helmerRank(helmer, data);
+  const helmerMod = helmerAttack(helmer, data);
   const override = st.attackOverride === null || st.attackOverride === "" || st.attackOverride === undefined ? null : int(st.attackOverride, null);
   const attack = override !== null ? override + bonuses.tracking : helmerMod !== null ? helmerMod + bonuses.tracking : null;
+  const area = data.traits.some((t) => /^area/i.test(t));
+  const specialization = specializationBonus(helmer, rank);
+  // Aim (operative) adds precision dice to ranged Strikes that aren't area attacks.
+  const aimDice = !area && helmer?.aim ? helmer.aim.dice : 0;
+  const formula = withMod(`${dice}d${data.die}`, specialization);
   return {
     index: wi,
     key: w.key,
     ...data,
     active: wi === (st.activeWeapon ?? 0),
     dice,
-    formula: `${dice}d${data.die}`,
+    rank,
+    specialization,
+    aimDice,
+    aimDie: helmer?.aim?.die ?? 4,
+    formula,
     tracking: bonuses.tracking,
     attack,
     map: mapPenalties(data.traits),
-    area: data.traits.some((t) => /^area/i.test(t)),
-    automatic: data.traits.includes("Automatic")
+    area,
+    automatic: data.traits.includes("Automatic"),
+    // Area Fire / Auto-Fire: targets attempt a basic Reflex save against the gunner's class DC + the weapon's tracking.
+    areaShape: areaShape(data),
+    autoFireRange: Math.max(1, Math.floor(data.range / 2)),
+    saveDC: Number.isFinite(helmer?.classDC) ? helmer.classDC + bonuses.tracking : null,
+    primaryTarget: !!helmer?.primaryTarget
   };
 }
 
@@ -344,7 +466,11 @@ export function npcWeapon(entry, level, index = 0) {
     map: mapPenalties(data.traits),
     formula: sameDie ? expression : withMod(`${dice}d${data.die}`, flat),
     area: data.traits.some((t) => /^area/i.test(t)),
-    automatic: data.traits.includes("Automatic")
+    automatic: data.traits.includes("Automatic"),
+    // Area Fire / Auto-Fire save DC: GM Core's creature DC at the ship's level, matching the attack tier (low uses moderate).
+    saveDC: CREATURE_DC[row][Math.min(NPC_TIERS.indexOf(attackTier), 2)],
+    areaShape: areaShape(data),
+    autoFireRange: Math.max(1, Math.floor(data.range / 2))
   };
 }
 
@@ -483,7 +609,8 @@ export function vehicleSync(derived, currentHP) {
     "system.details.level.value": derived.level,
     "system.attributes.hp.max": derived.hpMax,
     "system.attributes.hp.value": clamp(int(currentHP, derived.hpMax), 0, derived.hpMax),
-    "system.attributes.ac.value": derived.ac.total,
+    // Conditions (off-guard) are left to the system, which applies them to the vehicle's own AC.
+    "system.attributes.ac.value": derived.ac.total - (derived.ac.offGuard ?? 0),
     "system.saves.fortitude.value": derived.saves.fortitude.total,
     "system.details.speed": `${derived.speed} zones`,
     "system.traits.size.value": "med"

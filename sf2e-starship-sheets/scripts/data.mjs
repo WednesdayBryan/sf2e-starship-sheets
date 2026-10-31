@@ -383,6 +383,14 @@ export const STRIKE_DAMAGE_AVERAGE = [
   [68, 52, 44, 35]
 ];
 
+/** GM Core Spell DC table (pg. 126), also used for creature abilities' DCs: [extreme, high, moderate] by level (-1 to 24). */
+export const CREATURE_DC = [
+  [19, 16, 13], [19, 16, 13], [20, 17, 14], [22, 18, 15], [23, 20, 17], [25, 21, 18], [26, 22, 19], [27, 24, 21], [29, 25, 22],
+  [30, 26, 23], [32, 28, 25], [33, 29, 26], [34, 30, 27], [36, 32, 29], [37, 33, 30], [39, 34, 31], [40, 36, 33],
+  [41, 37, 34], [43, 38, 35], [44, 40, 37], [46, 41, 38], [47, 42, 39], [48, 44, 41], [50, 45, 42], [51, 46, 43],
+  [52, 48, 45]
+];
+
 /** GM Core Spell DC and Spell Attack Modifier table (pg. 126): spell attack modifier by level (-1 to 24). */
 export const SPELL_TIERS = ["extreme", "high", "moderate"];
 export const SPELL_ATTACK = [

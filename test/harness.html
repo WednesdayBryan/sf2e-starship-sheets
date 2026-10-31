@@ -17,7 +17,7 @@
 <div class="sf2e-starship-sheets frame" id="pc"><div class="window-content"></div></div>
 <div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
 <script type="module">
-import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon, tokenFacesLeft } from "../sf2e-starship-sheets/scripts/logic.mjs";
+import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon, tokenFacesLeft, predicateTest, weaponRollOptions, helmerRank, specializationBonus } from "../sf2e-starship-sheets/scripts/logic.mjs";
 import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
 
 const out = [];
@@ -41,7 +41,7 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
-  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", ranks: { simple: 2, martial: 1, advanced: 0 },
+  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", classDC: 21, ranks: { simple: 2, martial: 1, advanced: 0 },
     solarWeapon: { label: "Advanced Solar Weapon (Photon)", variants: ["+14", "+9", "+4"], attack: 14, dice: 2, type: "slashing" }, solarFlare: { attack: 12 } },
   scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
   mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
@@ -60,6 +60,20 @@ eq("NPC ship: 0 faces left, 180 faces right", [tokenFacesLeft("npc", 0), tokenFa
 eq("Art faces left inverts", [tokenFacesLeft("pc", 0, true), tokenFacesLeft("npc", 0, true)], [true, false]);
 eq("Old text headings count as 0", tokenFacesLeft("pc", "east"), false);
 eq("Cantrip rank at level 6", cantripRank(6), 3);
+// Operative guns: ranged simple/martial (or advanced) weapons with the analog or tech trait
+const GUNS = ["item:ranged", { or: ["item:category:martial", "item:category:simple"] }, { or: ["item:trait:analog", "item:trait:tech"] }];
+const ADV_GUNS = ["item:ranged", "item:category:advanced", { or: ["item:trait:analog", "item:trait:tech"] }];
+const op = { level: 7, dex: 4, ranks: { simple: 1, martial: 1, advanced: 0 }, specialization: "normal",
+  customAttacks: [{ slug: "martial-simple-guns", rank: 3, definition: GUNS }, { slug: "advanced-guns", rank: 2, definition: ADV_GUNS }] };
+eq("Light laser cannon (simple, tech) counts as a gun", predicateTest(GUNS, weaponRollOptions({ category: "simple", group: "Laser", traits: ["Tech"], range: 5 })), true);
+eq("Chain repeater (martial, analog) counts as a gun", predicateTest(GUNS, weaponRollOptions({ category: "martial", group: "Projectile", traits: ["Analog", "Automatic"], range: 2 })), true);
+eq("Polarizing beam (no analog/tech) isn't a gun", predicateTest(GUNS, weaponRollOptions({ category: "martial", group: "Shock", traits: ["Boost 1d8", "Ordnance"], range: 2 })), false);
+eq("Operative ranks: laser master, gravity cannon (advanced) expert, polarizing beam trained", [
+  helmerRank(op, { category: "simple", group: "Laser", traits: ["Tech"], range: 5 }),
+  helmerRank(op, { category: "advanced", group: "Shock", traits: ["Area (line)", "Ordnance", "Tech"], range: 5 }),
+  helmerRank(op, { category: "martial", group: "Shock", traits: ["Boost 1d8", "Ordnance"], range: 2 })], [3, 2, 1]);
+eq("Weapon specialization: master +3, greater legendary +8, trained 0", [specializationBonus(op, 3), specializationBonus({ specialization: "greater" }, 4), specializationBonus(op, 1)], [3, 8, 0]);
+eq("Predicate gte against a numeric roll option", predicateTest([{ gte: ["item:proficiency:rank", 2] }], ["item:proficiency:rank:3"]), true);
 eq("Cosmic Cannon rank 1 / 3", [cosmicSpell(504, 1).formula, cosmicSpell(504, 3).formula], ["2d4", "4d4"]);
 eq("Cosmic Bombardment rank 1, 3 actions", cosmicSpell(503, 1, 3).formula, "3d4+3");
 eq("Cosmic Bombardment rank 3, 2 actions (2 missiles per action)", cosmicSpell(503, 3, 2).formula, "4d4+4");
@@ -175,7 +189,7 @@ document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window
 });
 const npcEl = document.querySelector("#npc");
 eq("NPC sheet weapon attack buttons", [...npcEl.querySelectorAll('[data-action="npcWeaponStrike"][data-weapon="0"]')].map((b) => b.textContent), ["+11", "+7", "+3"]);
-eq("NPC sheet weapon damage + Area Fire for area weapon", [npcEl.querySelector('[data-action="npcWeaponDamage"][data-weapon="1"]').textContent.trim(), !!npcEl.querySelector('[data-action="npcWeaponAction"][data-action-id="17"]')], ["1d8+4 piercing", true]);
+eq("NPC area weapon (farseeker): no Strike buttons, Area Fire DC 18 (level 2, High) and area damage", [npcEl.querySelectorAll('[data-action="npcWeaponStrike"][data-weapon="1"]').length, npcEl.querySelector('[data-action="npcAreaFire"][data-weapon="1"]').textContent.trim().replace(/^\S+\s*/, ""), npcEl.querySelector('[data-action="npcWeaponDamage"][data-weapon="1"]').textContent.trim()], [0, "Area Fire DC 18", "1d8+4 piercing"]);
 eq("NPC sheet tier dropdowns", [npcEl.querySelector('[name="ship.weapons.0.attackTier"]').value, npcEl.querySelector('[name="ship.weapons.0.damageTier"]').value], ["high", "low"]);
 const headingText = (sel) => [...document.querySelector(`${sel} [name="ship.heading"]`).options].map((o) => o.textContent.trim());
 eq("Party heading dropdown", headingText("#pc"), ["0° → left to right", "180° ← right to left"]);
@@ -288,6 +302,18 @@ try {
     ["medical-bay", "https://2e.aonsrd.com/tactical-starship-combat/expansion-bays/4-medical-bay"]);
   check("Empty bay has no link", bays.querySelectorAll(".sss-bay")[1].querySelector(".sss-bay-link a"), null);
   check("Notes tab shows the notes box", !!tabHtml("notes").querySelector('textarea[name="ship.notes"]'), true);
+  // Area and automatic weapons on the party sheet
+  const g1 = document.querySelector("#pc .sss-gunnery");
+  const weaponLi = (root, name) => [...root.querySelectorAll("li.sss-weapon")].find((li) => li.textContent.includes(name));
+  const farseeker = weaponLi(g1, "Farseeker Missiles");
+  check("Farseeker Missiles (area): no Strike buttons, Area Fire DC 22 (class DC 21 + tracking 1)", [farseeker.querySelectorAll('[data-action="strike"]').length, farseeker.querySelector('[data-action="areaFire"]').textContent.trim().replace(/^\S+\s*/, "")], [0, "Area Fire DC 22"]);
+  check("Farseeker area damage button, no Strike damage", [!!farseeker.querySelector('[data-action="areaDamage"]'), farseeker.querySelectorAll('[data-action="weaponDamage"]').length], [true, 0]);
+  check("Light Laser Cannon (not area) still Strikes", weaponLi(g1, "Light Laser Cannon").querySelectorAll('[data-action="strike"]').length, 3);
+  const g2 = [...document.querySelectorAll("#pc .sss-gunnery")][1];
+  const repeater = weaponLi(g2, "Chain Repeater");
+  check("Chain Repeater (automatic): Strike buttons kept and an Auto-Fire button", [!!repeater.querySelector('[data-action="strike"], .sss-hint'), !!repeater.querySelector('[data-action="areaFire"][data-kind="auto"]')], [true, true]);
+  const soldier = derivePCShip(ship, { ...crew, gunner: { ...crew.gunner, primaryTarget: true } }).stations[2].weaponsView[0];
+  check("Soldier gets Primary Target on area weapons", [soldier.primaryTarget, soldier.areaShape, soldier.saveDC], [true, "burst 1 zone, centered within 6 zones", 22]);
   check("Nova Weapon shows photon attunement", row("Nova Weapon").textContent.includes("Photon") && row("Nova Weapon").textContent.includes("+3 fire"), true);
   check("Nova Strike buttons from melee solar weapon", [...row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), ["+14", "+9", "+4"]);
   check("Nova Strike names the solar weapon and uses d10 damage", [row("Nova Strike").textContent.includes("Advanced Solar Weapon (Photon)"), row("Nova Strike").querySelector('[data-action="novaDamage"]').textContent.trim()], [true, "Damage 2d10"]);
@@ -327,6 +353,27 @@ try {
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"]'));
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"][data-critical]'));
   check("Nova damage is the Strike's own formula with d10 dice", damageFormulas, ["{(2d10 + 7)[slashing]}", "{(2 * (2d10 + 7))[slashing]}"]);
+
+  // Effugy (operative) helming the second gunnery
+  const effShip = structuredClone(ship);
+  effShip.stations[5].helmer = "effugy";
+  const effugy = { name: "Effugy", uuid: "effugy", level: 7, getRollOptions: () => [],
+    system: { abilities: { dex: { mod: 4 }, str: { mod: 0 } }, proficiencies: { attacks: { simple: { rank: 1 }, martial: { rank: 1 }, advanced: { rank: 0 },
+      "martial-simple-guns": { rank: 3, definition: GUNS }, "advanced-guns": { rank: 2, definition: ADV_GUNS } } } },
+    itemTypes: { feat: [{ slug: "weapon-specialization" }], effect: [{ slug: "effect-aim" }] },
+    flags: { system: { operative: { aim: { diceNumber: 2, dieSize: 4 } } } }, synthetics: { tokenMarks: new Map([["Scene.s.Token.raider", "aim"]]) } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "effugy" ? effugy : uuid === "gunner" ? solarian : uuid === "mystic" ? mystic : null);
+  const effSheet = new main.PCStarshipSheet();
+  effSheet.document = { ...shipActor, flags: { "sf2e-starship-sheets": { ship: effShip } } };
+  const effWeapons = main.derivedFor(effSheet.document).derived.stations[5].weaponsView;
+  check("Effugy at gunnery 2: master guns, 4 Dex + 7 + 6 + tracking 1 = +18", effWeapons.map((w) => [w.name, w.rank, w.attack]), [["Light Laser Cannon", 3, 18], ["Chain Repeater", 3, 18]]);
+  check("Effugy damage: 2d8 + weapon specialization 3, Aim 2d4", effWeapons.map((w) => [w.formula, w.aimDice]), [["2d8+3", 2], ["2d8+3", 2]]);
+  damageFormulas.length = 0;
+  globalThis.game.user.targets = new Set([{ actor: targetShip, document: { uuid: "Scene.s.Token.raider" } }]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.weaponDamage.call(effSheet, {}, { dataset: { station: "5", weapon: "0" } });
+  globalThis.game.user.targets = new Set([{ actor: targetShip, document: { uuid: "Scene.s.Token.other" } }]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.weaponDamage.call(effSheet, {}, { dataset: { station: "5", weapon: "0" } });
+  check("Aim adds precision only against the marked ship", damageFormulas, ["{(2d8+3+(2d4[precision]))[fire]}", "{(2d8+3)[fire]}"]);
   nextDie = 20;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
   check("Graviton Nova Blast crit: off-kilter and slowed", targetUpdates[1]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => [e.offKilter, e.speed]), [[true, -1]]);
@@ -372,6 +419,48 @@ try {
   check("Effects show on the NPC sheet", (() => { const el = document.createElement("div"); el.innerHTML = (window.__renderNPC)({ effects: [{ label: "Off-kilter (test)", speed: -1 }] }); return el.textContent.includes("Off-kilter (test)") && el.textContent.includes("(now 3)"); })(), true);
   check("Spell attack rolls caster's spellcasting vs target AC 20 with MAP -5", { label: spellRolls[0].label, dc: spellRolls[0].dc, map: spellRolls[0].modifiers?.[0]?.modifier },
     { label: "Cosmic Cannon: spell attack (MAP -5)", dc: { value: 20, label: "Raider's AC" }, map: -5 });
+
+  // Off-guard / off-kilter on the party's starship
+  const cond = derivePCShip(ship, crew, { offGuard: true, offKilter: true });
+  const plain = derivePCShip(ship, crew);
+  check("Off-guard: AC -2; off-kilter: Reflex -2, weapon attack -2, area DC -2",
+    [plain.ac.total - cond.ac.total, plain.saves.reflex.total - cond.saves.reflex.total, plain.stations[2].weaponsView[1].attack - cond.stations[2].weaponsView[1].attack, plain.stations[2].weaponsView[0].saveDC - cond.stations[2].weaponsView[0].saveDC], [2, 2, 2, 2]);
+  check("Vehicle's own synced AC leaves off-guard to the system", vehicleSync(cond, 50)["system.attributes.ac.value"], plain.ac.total);
+
+  // Juke results post draggable condition links
+  const chatPosts = [];
+  globalThis.ChatMessage.create = async (m) => chatPosts.push(m.content);
+  globalThis.game.settings.get = (mod, key) => (key === "offKilterUuid" ? "Compendium.world.starship-conditions.Item.okilter" : true);
+  globalThis.game.packs = [{ documentName: "Item", metadata: { packageType: "system" }, collection: "sf2e.conditions",
+    getIndex: async () => [{ name: "Off-Guard", type: "condition", _id: "AJh5ex99aV6VTggg", uuid: "Compendium.sf2e.conditions.Item.AJh5ex99aV6VTggg" }] }];
+  let jukeDegree = 3;
+  const pilotActor = { name: "Pre-Cog", uuid: "pilot", skills: { piloting: { roll: async () => ({ degreeOfSuccess: jukeDegree }) } } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "pilot" ? pilotActor : null);
+  globalThis.game.user.targets = new Set([{ name: "Raider", actor: { type: "npc", name: "Raider", perception: { dc: { value: 17 } } } }]);
+  const jukeBtn = [...document.querySelectorAll('#pc [data-action="rollActionCheck"]')].find((b) => b.closest("li").textContent.includes("Juke"));
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.rollActionCheck.call(sheet, {}, jukeBtn);
+  check("Juke critical success: Off-Guard and Off-Kilter links", [chatPosts.length, chatPosts[0]?.includes("@UUID[Compendium.sf2e.conditions.Item.AJh5ex99aV6VTggg]{Off-Guard}"), chatPosts[0]?.includes("@UUID[Compendium.world.starship-conditions.Item.okilter]{Off-Kilter}"), chatPosts[0]?.includes("Raider is off-kilter and off-guard for 1 round")], [1, true, true, true]);
+  jukeDegree = 2;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.rollActionCheck.call(sheet, {}, jukeBtn);
+  check("Juke success: Off-Guard only", [chatPosts.length, chatPosts[1]?.includes("{Off-Guard}"), chatPosts[1]?.includes("{Off-Kilter}")], [2, true, false]);
+  jukeDegree = 1;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.rollActionCheck.call(sheet, {}, jukeBtn);
+  check("Juke failure: no condition card", chatPosts.length, 2);
+
+  // The GM's client creates the Starship Conditions compendium with Off-Kilter once
+  const created = [];
+  let savedUuid = "";
+  globalThis.game.user.id = "gm";
+  globalThis.game.users = { activeGM: { id: "gm" } };
+  globalThis.game.settings.get = () => savedUuid;
+  globalThis.game.settings.set = async (m, k, v) => (savedUuid = v);
+  globalThis.fromUuid = async () => null;
+  globalThis.game.packs = { get: () => null };
+  globalThis.foundry.documents = { collections: { CompendiumCollection: { createCompendium: async (meta) => (created.push(meta), { collection: `world.${meta.name}`, getIndex: async () => [] }) } } };
+  globalThis.Item = { create: async (data, opts) => (created.push([data.name, data.type, data.system.slug, opts.pack, data.system.rules[0].selector]), { uuid: "Compendium.world.starship-conditions.Item.new1" }) };
+  await main.ensureOffKilter();
+  check("Off-Kilter is created in a Starship Conditions compendium", [created[0], created[1], savedUuid],
+    [{ label: "Starship Conditions", name: "starship-conditions", type: "Item" }, ["Off-Kilter", "effect", "off-kilter", "world.starship-conditions", ["attack", "reflex"]], "Compendium.world.starship-conditions.Item.new1"]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

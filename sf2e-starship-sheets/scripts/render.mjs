@@ -221,6 +221,8 @@ export function renderPCSheet(vm) {
             <span>Frame ${d.ac.frame}</span>
             <span>Pilot DC ${d.ac.pilotDC ?? "—"}</span>
             ${d.ac.item ? `<span>Helmed +${d.ac.item}</span>` : ""}
+            ${d.ac.offGuard ? `<span class="sss-destroyed">Off-guard −2</span>` : ""}
+            ${d.conditions?.offKilter ? `<span class="sss-destroyed">Off-kilter: −2 attacks, Reflex, area DCs</span>` : ""}
           </div>
           <select name="ship.acCircumstance" data-dtype="Number"${dis(editable)} title="Circumstance bonus to AC">
             ${opt(0, "No Evade/Cover", ship.acCircumstance)}${opt(1, "Evade +1", ship.acCircumstance)}${opt(2, "Evade +2", ship.acCircumstance)}${opt(4, "Cover +4", ship.acCircumstance)}
@@ -359,22 +361,43 @@ function weaponsBlock(s, vm) {
   const rows = s.weaponsView
     .map((w) => {
       if (w.missing) return `<li class="sss-weapon">${esc(w.name)} <button type="button" class="sss-x" data-action="removeWeapon" data-station="${i}" data-index="${w.index}">✕</button></li>`;
-      const strikes = w.attack === null
-        ? `<span class="sss-hint">Assign a helmer or set an attack bonus</span>`
-        : w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="strike" data-station="${i}" data-weapon="${w.index}" data-map="${mi}"${s.malfunctioning ? " disabled" : ""}>${signed(w.attack + pen)}</button>`).join("");
+      const off = s.malfunctioning ? " disabled" : "";
+      // Area weapons can only fire with Area Fire (no attack roll); everything else can Strike.
+      const strikes = w.area
+        ? ""
+        : w.attack === null
+          ? `<span class="sss-hint">Assign a helmer or set an attack bonus</span>`
+          : w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="strike" data-station="${i}" data-weapon="${w.index}" data-map="${mi}"${off}>${signed(w.attack + pen)}</button>`).join("");
+      const dcText = w.saveDC !== null ? ` DC ${w.saveDC}` : "";
+      const areaFire = (kind) => {
+        const auto = kind === "auto";
+        const title = auto
+          ? `Auto-Fire (2 actions): ${w.autoFireRange}-zone cone; basic Reflex save vs. class DC + tracking`
+          : `Area Fire (2 actions): ${w.areaShape}; basic Reflex save vs. class DC + tracking`;
+        return `<button type="button" class="sss-roll" data-action="areaFire" data-kind="${kind}" data-station="${i}" data-weapon="${w.index}"${off} title="${esc(title)}">${costGlyph(2)} ${auto ? "Auto-Fire" : "Area Fire"}${dcText}</button>`;
+      };
+      const primary = (w.area || w.automatic) && w.primaryTarget && w.attack !== null
+        ? `<button type="button" class="sss-strike" data-action="primaryTarget" data-station="${i}" data-weapon="${w.index}"${off}
+            title="Primary Target (free action, no multiple attack penalty): on a hit, the target's successful save becomes a failure">Primary ${signed(w.attack)}</button>`
+        : "";
       return `<li class="sss-weapon${w.active ? " is-active" : ""}">
         <div class="sss-weapon-head">
           ${slots > 1 ? `<input type="radio" name="ship.stations.${i}.activeWeapon" data-dtype="Number" value="${w.index}"${w.active ? " checked" : ""}${dis(editable)} title="Active weapon">` : ""}
-          ${link(w.url, w.name)} <span class="sss-dim">${esc(w.category)} · ${w.range} zones</span>
+          ${link(w.url, w.name)} <span class="sss-dim">${esc(w.category)} · ${w.range} zones${s.helmerData && !s.helmerData.missing ? ` · ${["untrained", "trained", "expert", "master", "legendary"][w.rank] ?? ""}` : ""}</span>
           ${editable ? `<button type="button" class="sss-x" data-action="removeWeapon" data-station="${i}" data-index="${w.index}" title="Remove">✕</button>` : ""}
         </div>
         <div class="sss-weapon-roll">
           ${strikes}
-          <button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}">${esc(w.formula)} ${esc(w.type)}</button>
-          <button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}" data-critical="1">Crit</button>
-          ${w.area ? `<button type="button" data-action="postAction" data-action-id="17" data-station="${i}">Area Fire</button>` : ""}
-          ${w.automatic ? `<button type="button" data-action="postAction" data-action-id="19" data-station="${i}">Auto-Fire</button>` : ""}
+          ${w.area ? "" : `<button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}"
+            title="${w.specialization ? `Includes weapon specialization +${w.specialization}` : ""}${w.aimDice ? `${w.specialization ? "; " : ""}Aim adds ${w.aimDice}d${w.aimDie} precision against the marked target` : ""}">${esc(w.formula)} ${esc(w.type)}${w.aimDice ? ` + ${w.aimDice}d${w.aimDie} precision` : ""}</button>
+          <button type="button" data-action="weaponDamage" data-station="${i}" data-weapon="${w.index}" data-critical="1">Crit</button>`}
         </div>
+        ${w.area || w.automatic ? `<div class="sss-weapon-roll">
+          ${primary}
+          ${areaFire(w.area ? "area" : "auto")}
+          <button type="button" data-action="areaDamage" data-station="${i}" data-weapon="${w.index}"${off} title="Area damage; each target applies its basic Reflex save result">${esc(w.formula)} ${esc(w.type)}</button>
+          ${w.saveDC === null ? `<span class="sss-hint">needs the gunner's class DC</span>` : ""}
+        </div>` : ""}
         <div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}${w.tracking ? `<span class="sss-trait">Tracking +${w.tracking}</span>` : ""}</div>
       </li>`;
     })
@@ -518,13 +541,16 @@ function npcWeaponsBlock(vm) {
       return `<li class="sss-weapon">
         <div class="sss-weapon-head">${link(w.url, w.name)} <span class="sss-dim">${w.range === 0 ? "melee · targets in the same zone" : `${esc(w.category)} · range increment ${w.range} zones`}</span>
           ${editable ? `<button type="button" class="sss-x" data-action="removeNPCWeapon" data-index="${w.index}" title="Remove">✕</button>` : ""}</div>
-        <div class="sss-weapon-roll">
+        ${w.area ? "" : `<div class="sss-weapon-roll">
           ${w.map.map((pen, mi) => `<button type="button" class="sss-strike" data-action="npcWeaponStrike" data-weapon="${w.index}" data-map="${mi}" title="Attack vs target's AC">${signed(w.attack + pen)}</button>`).join("")}
           <button type="button" data-action="npcWeaponDamage" data-weapon="${w.index}">${esc(w.formula)} ${esc(w.type)}</button>
           <button type="button" data-action="npcWeaponDamage" data-weapon="${w.index}" data-critical="1">Crit</button>
-          ${w.area ? `<button type="button" data-action="npcWeaponAction" data-action-id="17">Area Fire</button>` : ""}
-          ${w.automatic ? `<button type="button" data-action="npcWeaponAction" data-action-id="19">Auto-Fire</button>` : ""}
-        </div>
+        </div>`}
+        ${w.area || w.automatic ? `<div class="sss-weapon-roll">
+          <button type="button" class="sss-roll" data-action="npcAreaFire" data-weapon="${w.index}" data-kind="${w.area ? "area" : "auto"}"
+            title="${w.area ? `Area Fire (2 actions): ${esc(w.areaShape)}` : `Auto-Fire (2 actions): ${w.autoFireRange}-zone cone`}; basic Reflex save, no attack roll">${costGlyph(2)} ${w.area ? "Area Fire" : "Auto-Fire"} DC ${w.saveDC}</button>
+          <button type="button" data-action="npcWeaponDamage" data-weapon="${w.index}" title="Area damage; each target applies its basic Reflex save">${esc(w.formula)} ${esc(w.type)}</button>
+        </div>` : ""}
         <div class="sss-weapon-tiers">
           <label>Attack ${tierSelect(`ship.weapons.${w.index}.attackTier`, w.attackTier)}</label>
           <label>Damage ${tierSelect(`ship.weapons.${w.index}.damageTier`, w.damageTier)}</label>
@@ -534,7 +560,7 @@ function npcWeaponsBlock(vm) {
     })
     .join("");
   return `<section class="sss-card">
-    <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}</label>
+    <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}${vm.offKilter ? ` <span class="sss-destroyed">off-kilter: −2 attacks and area DCs</span>` : ""}</label>
     <ul class="sss-weapons-list">${rows || `<li class="sss-hint">No starship weapons yet.</li>`}</ul>
     ${editable ? `<select data-action-change="addNPCWeapon"><option value="">+ Add starship weapon…</option>${Object.entries(NPC_WEAPONS)
       .map(([k, w]) => opt(k, w.range === 0 ? `${w.name} (melee)` : `${w.name} (${w.category}, ${w.range} zones)`, ""))

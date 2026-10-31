@@ -10,7 +10,7 @@ import {
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon,
-  tokenFacesLeft, ventPowerDice, vehicleSync
+  npcWeaponOffKilter, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -122,8 +122,44 @@ function crewInfo(uuid) {
     pilotDC: a.skills?.piloting?.dc?.value ?? null,
     dex: a.system?.abilities?.dex?.mod ?? 0,
     level: a.level ?? 0,
-    ranks: { simple: att.simple?.rank ?? 0, martial: att.martial?.rank ?? 0, advanced: att.advanced?.rank ?? 0 }
+    ranks: { simple: att.simple?.rank ?? 0, martial: att.martial?.rank ?? 0, advanced: att.advanced?.rank ?? 0 },
+    // Class proficiencies with their own definitions, e.g. an operative's "martial-simple-guns" and "advanced-guns".
+    customAttacks: Object.entries(att)
+      .filter(([, p]) => p?.definition && Number(p.rank) > 0)
+      .map(([slug, p]) => ({ slug, label: p.label ?? slug, rank: Number(p.rank), definition: JSON.parse(JSON.stringify(p.definition)) })),
+    specialization: weaponSpecialization(a),
+    aim: aimInfo(a),
+    classDC: a.classDC?.dc?.value ?? a.system?.attributes?.classDC?.value ?? null,
+    primaryTarget: (a.itemTypes?.feat ?? []).some((f) => (f.slug ?? f.system?.slug) === "primary-target")
   };
+}
+
+/** "greater", "normal" or null, from the character's Weapon Specialization class features. */
+function weaponSpecialization(actor) {
+  const slugs = new Set((actor.itemTypes?.feat ?? []).map((f) => f.slug ?? f.system?.slug));
+  if (slugs.has("greater-weapon-specialization")) return "greater";
+  if (slugs.has("weapon-specialization")) return "normal";
+  return null;
+}
+
+/** The operative's Aim while "Effect: Aim" is on them: precision dice from the system's operative flags. */
+function aimInfo(actor) {
+  const active = (actor.itemTypes?.effect ?? []).some((e) => (e.slug ?? e.system?.slug) === "effect-aim");
+  if (!active) return null;
+  const flags = actor.flags?.system?.operative?.aim ?? {};
+  const level = actor.level ?? 1;
+  return {
+    dice: Number(flags.diceNumber) || (level >= 17 ? 4 : level >= 11 ? 3 : level >= 5 ? 2 : 1),
+    die: Number(flags.dieSize) || 4
+  };
+}
+
+/** Whether Aim applies against the current target: the targeted token must be the one marked by Aim. */
+function aimHitsTarget(actor) {
+  const marks = actor?.synthetics?.tokenMarks;
+  const target = [...game.user.targets][0];
+  if (!marks || !target) return true;
+  return marks.get(target.document?.uuid) === "aim";
 }
 
 function crewMap(ship) {
@@ -134,7 +170,89 @@ function crewMap(ship) {
 
 export function derivedFor(actor) {
   const ship = getShip(actor);
-  return { ship, derived: derivePCShip(ship, crewMap(ship)) };
+  return { ship, derived: derivePCShip(ship, crewMap(ship), shipStatus(actor)) };
+}
+
+/* ---------------------------------- conditions ---------------------------------- */
+
+const CONDITIONS_PACK = "starship-conditions";
+
+/** The custom Off-Kilter condition (an effect, since the system has no off-kilter condition). */
+const OFF_KILTER = {
+  name: "Off-Kilter",
+  type: "effect",
+  img: "icons/svg/windmill.svg",
+  system: {
+    slug: "off-kilter",
+    description: {
+      value: `<p>The starship is askew: a –2 circumstance penalty to attack rolls, Area Fire and Auto-Fire DCs, and Reflex saves, and it can't use station actions that would move it. Using Change Heading rights the starship and ends this condition.</p>
+<p><a href="${AON}conditions/50-off-kilter" target="_blank" rel="noopener">Off-Kilter on Archives of Nethys</a></p>`
+    },
+    rules: [{ key: "FlatModifier", label: "Off-Kilter", slug: "off-kilter", selector: ["attack", "reflex"], type: "circumstance", value: -2 }],
+    duration: { value: -1, unit: "unlimited", expiry: null, sustained: false },
+    start: { value: 0, initiative: null },
+    level: { value: 1 },
+    tokenIcon: { show: true },
+    traits: { value: [] }
+  }
+};
+
+const hasOffKilter = (actor) => (actor?.itemTypes?.effect ?? []).some((e) => (e.slug ?? e.system?.slug) === "off-kilter");
+
+/** Conditions on a starship that change its numbers. */
+function shipStatus(actor) {
+  return { offGuard: !!actor?.hasCondition?.("off-guard"), offKilter: hasOffKilter(actor) };
+}
+
+/**
+ * Make sure the world has a "Starship Conditions" compendium holding Off-Kilter, and remember its UUID.
+ * Only the active GM can create compendiums, so this runs on the GM's client.
+ */
+export async function ensureOffKilter() {
+  if (game.users.activeGM?.id !== game.user.id) return;
+  const saved = game.settings.get(MODULE_ID, "offKilterUuid");
+  if (saved && (await fromUuid(saved).catch(() => null))) return;
+  const CC = foundry.documents.collections?.CompendiumCollection ?? globalThis.CompendiumCollection;
+  let pack = game.packs.get(`world.${CONDITIONS_PACK}`);
+  if (!pack) pack = await CC.createCompendium({ label: "Starship Conditions", name: CONDITIONS_PACK, type: "Item" });
+  const index = await pack.getIndex();
+  const entry = index.find((e) => e.name === OFF_KILTER.name);
+  const uuid = entry ? entry.uuid ?? `Compendium.${pack.collection}.Item.${entry._id}` : (await Item.create(OFF_KILTER, { pack: pack.collection })).uuid;
+  await game.settings.set(MODULE_ID, "offKilterUuid", uuid);
+}
+
+/** UUID of a system condition (e.g. Off-Guard) in the system's condition compendium. */
+async function systemConditionUuid(name) {
+  for (const pack of game.packs) {
+    if (pack.documentName !== "Item" || pack.metadata.packageType !== "system") continue;
+    const index = await pack.getIndex({ fields: ["type"] });
+    const entry = index.find((e) => e.name === name && e.type === "condition");
+    if (entry) return entry.uuid ?? `Compendium.${pack.collection}.Item.${entry._id}`;
+  }
+  return null;
+}
+
+const CONDITION_NAMES = { "off-guard": "Off-Guard", "off-kilter": "Off-Kilter" };
+
+/** After a station action's check, post the conditions its result puts on the target as draggable links. */
+async function postOutcomeConditions(actionId, degree, speakerActor) {
+  const slugs = ACTION_OUTCOME_CONDITIONS[actionId]?.[degree];
+  if (!slugs?.length) return;
+  const links = [];
+  for (const slug of slugs) {
+    const uuid = slug === "off-kilter" ? game.settings.get(MODULE_ID, "offKilterUuid") : await systemConditionUuid(CONDITION_NAMES[slug]);
+    links.push(uuid ? `@UUID[${uuid}]{${CONDITION_NAMES[slug]}}` : `<strong>${CONDITION_NAMES[slug]}</strong>`);
+  }
+  const target = [...game.user.targets][0];
+  const a = ACTIONS[actionId];
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ actor: speakerActor }),
+    content: `<div class="sss-chat">
+      <header><strong>${esc(a.name)}: ${DEGREE_LABELS[degree]}</strong></header>
+      <p>${target ? esc(target.name) : "The target"} is ${slugs.map((s) => CONDITION_NAMES[s].toLowerCase()).join(" and ")} for 1 round.</p>
+      <p>Drag onto the enemy starship's token: ${links.join(" ")}</p>
+    </div>`
+  });
 }
 
 /** Current damage state of any starship actor. */
@@ -534,6 +652,9 @@ export class PCStarshipSheet extends StarshipSheetBase {
       rollSave: PCStarshipSheet.#onRollSave,
       postAction: PCStarshipSheet.#onPostAction,
       rollActionCheck: PCStarshipSheet.#onRollActionCheck,
+      areaFire: PCStarshipSheet.#onAreaFire,
+      areaDamage: PCStarshipSheet.#onAreaDamage,
+      primaryTarget: PCStarshipSheet.#onPrimaryTarget,
       spellAttack: PCStarshipSheet.#onSpellAttack,
       spellDamage: PCStarshipSheet.#onSpellDamage,
       castSpell: PCStarshipSheet.#onCastSpell,
@@ -660,7 +781,10 @@ export class PCStarshipSheet extends StarshipSheetBase {
     const params = { event, label: `${a.name} (${SKILL_LABELS[skill]})` };
     if (dc) params.dc = dc;
     if (check.secret) params.rollMode = "blindroll";
-    await statistic.roll(params);
+    const roll = await statistic.roll(params);
+    // Juke and similar: post the conditions the result gives the target, as draggable links.
+    const degree = roll?.degreeOfSuccess ?? roll?.options?.degreeOfSuccess;
+    if (Number.isFinite(degree)) await postOutcomeConditions(id, degree, actor);
   }
 
   /** Cosmic Cannon: ranged spell attack against the targeted starship's AC. */
@@ -873,12 +997,70 @@ export class PCStarshipSheet extends StarshipSheetBase {
     const w = st?.weaponsView[Number(target.dataset.weapon)];
     if (!w || w.missing) return;
     const critical = target.dataset.critical === "1";
+    const helmer = st.helmerData?.actor;
+    const aim = w.aimDice > 0 && aimHitsTarget(helmer);
+    const formula = aim ? `${w.formula}+(${w.aimDice}d${w.aimDie}[precision])` : w.formula;
+    const notes = [w.specialization ? `weapon specialization +${w.specialization}` : "", aim ? `Aim +${w.aimDice}d${w.aimDie} precision` : ""].filter(Boolean);
     await rollDamage({
-      formula: w.formula,
+      formula,
       type: w.type,
       critical,
       speaker: this.#speaker(st),
-      flavor: `<strong>${esc(w.name)}</strong> ${critical ? "critical " : ""}damage`
+      flavor: `<strong>${esc(w.name)}</strong> ${critical ? "critical " : ""}damage${notes.length ? ` (${notes.join(", ")})` : ""}`
+    });
+  }
+
+  /**
+   * Area Fire (area weapons) or Auto-Fire (automatic weapons): two actions, no attack roll; each starship in the
+   * area attempts a basic Reflex save against the gunner's class DC + the weapon's tracking.
+   */
+  static async #onAreaFire(event, target) {
+    const { st } = this.#station(target);
+    const w = st?.weaponsView[Number(target.dataset.weapon)];
+    if (!w || w.missing) return;
+    const auto = target.dataset.kind === "auto";
+    const a = ACTIONS[auto ? 19 : 17];
+    const area = auto ? `a ${w.autoFireRange}-zone cone` : w.areaShape;
+    const dc = w.saveDC !== null
+      ? `<strong>DC ${w.saveDC}</strong> (${esc(st.helmerData?.name ?? "the gunner")}'s class DC${w.tracking ? ` + tracking ${w.tracking}` : ""})`
+      : "the gunner's class DC + the weapon's tracking";
+    await ChatMessage.create({
+      speaker: this.#speaker(st),
+      content: `<div class="sss-chat">
+        <header><strong>${esc(a.name)}</strong> ${costGlyph(2)} — ${esc(w.name)}</header>
+        <p>Area: ${esc(area)}. No attack roll.</p>
+        <p>Each starship in the area attempts a <strong>basic Reflex save</strong> against ${dc}.
+          On a critical failure, it suffers the weapon's critical hit effects.</p>
+        ${w.primaryTarget ? `<p>Primary Target: before this, make a free-action Strike against one starship in the area; on a hit, its success becomes a failure.</p>` : ""}
+        <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
+      </div>`
+    });
+  }
+
+  /** Area damage for Area Fire / Auto-Fire: no Aim, since these aren't Strikes. */
+  static async #onAreaDamage(event, target) {
+    const { st } = this.#station(target);
+    const w = st?.weaponsView[Number(target.dataset.weapon)];
+    if (!w || w.missing) return;
+    await rollDamage({
+      formula: w.formula,
+      type: w.type,
+      speaker: this.#speaker(st),
+      flavor: `<strong>${esc(w.name)}</strong> area damage — each target applies its basic Reflex save${w.specialization ? ` (includes weapon specialization +${w.specialization})` : ""}`
+    });
+  }
+
+  /** Soldier's Primary Target: a free-action Strike with the area weapon, no multiple attack penalty. */
+  static async #onPrimaryTarget(event, target) {
+    const { st } = this.#station(target);
+    const w = st?.weaponsView[Number(target.dataset.weapon)];
+    if (!w || w.missing || w.attack === null) return;
+    await rollCheck({
+      label: `${w.name}: Primary Target`,
+      mod: w.attack,
+      speaker: this.#speaker(st),
+      dc: targetAC(),
+      extra: `<div>Free action, no multiple attack penalty. On a hit, if this target succeeds at its save against the ${w.automatic && !w.area ? "Auto-Fire" : "Area Fire"}, it gets a failure instead.</div>`
     });
   }
 
@@ -935,7 +1117,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       npcRepairSelf: NPCStarshipSheet.#onRepairSelf,
       npcWeaponStrike: NPCStarshipSheet.#onWeaponStrike,
       npcWeaponDamage: NPCStarshipSheet.#onWeaponDamage,
-      npcWeaponAction: NPCStarshipSheet.#onWeaponAction,
+      npcAreaFire: NPCStarshipSheet.#onAreaFire,
       removeNPCWeapon: NPCStarshipSheet.#onRemoveWeapon,
       addNPCStation: NPCStarshipSheet.#onAddStation,
       removeNPCStation: NPCStarshipSheet.#onRemoveStation,
@@ -995,7 +1177,8 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       hpField: "system.attributes.hp.value",
       strikes,
       actions,
-      weapons: (ship.weapons ?? []).map((w, i) => npcWeapon(w, actor.level, i)),
+      weapons: (ship.weapons ?? []).map((w, i) => npcWeapon(w, actor.level, i)).map((w) => (hasOffKilter(actor) ? npcWeaponOffKilter(w) : w)),
+      offKilter: hasOffKilter(actor),
       tab: this._tab ?? "combat"
     };
   }
@@ -1152,7 +1335,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
   #weapon(target) {
     const index = Number(target.dataset.weapon);
     const entry = this.ship.weapons?.[index];
-    return entry ? npcWeapon(entry, this.document.level, index) : null;
+    return entry ? (hasOffKilter(this.document) ? npcWeaponOffKilter(npcWeapon(entry, this.document.level, index)) : npcWeapon(entry, this.document.level, index)) : null;
   }
 
   /** Starship weapon Strike against the targeted starship's AC. */
@@ -1186,12 +1369,18 @@ export class NPCStarshipSheet extends StarshipSheetBase {
     });
   }
 
-  static async #onWeaponAction(event, target) {
-    const a = ACTIONS[Number(target.dataset.actionId)];
-    if (!a) return;
+  /** Area Fire / Auto-Fire: no attack roll; targets attempt a basic Reflex save against the ship's DC. */
+  static async #onAreaFire(event, target) {
+    const w = this.#weapon(target);
+    if (!w || w.missing) return;
+    const auto = target.dataset.kind === "auto";
+    const a = ACTIONS[auto ? 19 : 17];
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
-      content: `<div class="sss-chat"><header><strong>${esc(a.name)}</strong> ${costGlyph(a.cost)}</header>
+      content: `<div class="sss-chat"><header><strong>${esc(a.name)}</strong> ${costGlyph(2)} — ${esc(w.name)}</header>
+        <p>Area: ${esc(auto ? `a ${w.autoFireRange}-zone cone` : w.areaShape)}. No attack roll.</p>
+        <p>Each starship in the area attempts a <strong>basic Reflex save</strong> against <strong>DC ${w.saveDC}</strong>.
+          On a critical failure, it suffers the weapon's critical hit effects.</p>
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a></div>`
     });
   }
@@ -1347,6 +1536,7 @@ Hooks.once("init", () => {
     console.warn(`${MODULE_ID} | Needs the Starfinder 2e system; staying inactive.`);
     return;
   }
+  game.settings.register(MODULE_ID, "offKilterUuid", { scope: "world", config: false, type: String, default: "" });
   game.settings.register(MODULE_ID, "shieldsAbsorb", {
     name: "Shields absorb system damage",
     hint: "When damage is applied to a starship with the system's chat buttons, take it from Shield Points first and track the compromised condition.",
@@ -1376,15 +1566,19 @@ Hooks.once("init", () => {
   });
 
   // A crew member's Piloting, Dexterity or proficiency changes what the ship sheet shows.
-  Hooks.on("updateActor", (actor) => {
-    if (actor.type !== "character") return;
+  const refreshCrew = (actor) => {
+    if (actor?.type !== "character") return;
     for (const app of foundry.applications.instances.values()) {
       if (app instanceof PCStarshipSheet && app.rendered && app.ship.stations.some((s) => s.helmer === actor.uuid)) app.render();
     }
-  });
+  };
+  Hooks.on("updateActor", refreshCrew);
+  // Effects such as Aim, and feats, are items on the crew member.
+  for (const hook of ["createItem", "updateItem", "deleteItem"]) Hooks.on(hook, (item) => refreshCrew(item.parent));
 
   // Players can't update starships they don't own; the active GM applies effects for them.
   Hooks.once("ready", () => {
+    ensureOffKilter().catch((err) => console.error(`${MODULE_ID} | Couldn't create the Off-Kilter condition`, err));
     game.socket.on(`module.${MODULE_ID}`, (data) => {
       if (data?.type !== "addEffects" || game.users.activeGM?.id !== game.user.id) return;
       const actor = fromUuidSync(data.uuid);
