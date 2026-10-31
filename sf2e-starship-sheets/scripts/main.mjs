@@ -435,6 +435,26 @@ export async function applyHeading(actor) {
   }
 }
 
+/**
+ * Change Heading: reverse the starship's heading (turning its tokens) and end off-kilter, both the Off-Kilter
+ * effect and the off-kilter part of a module effect such as a graviton Nova Blast's (its Speed penalty stays).
+ * Returns a sentence for the chat card.
+ */
+export async function changeHeading(actor) {
+  const ship = getShip(actor);
+  const heading = normalizeHeading(ship.heading) === 180 ? 0 : 180;
+  const wasModuleOffKilter = (ship.effects ?? []).some((e) => e.offKilter);
+  const effects = (ship.effects ?? []).map((e) =>
+    e.offKilter ? { ...e, offKilter: false, label: String(e.label).replace(/^off-kilter,\s*/i, "") } : e
+  );
+  await actor.update({ [`${FLAG}.heading`]: heading, [`${FLAG}.effects`]: effects }, { [MODULE_ID]: true });
+  await applyHeading(actor);
+  const offKilter = (actor.itemTypes?.effect ?? []).filter((e) => (e.slug ?? e.system?.slug) === "off-kilter").map((e) => e.id);
+  if (offKilter.length) await actor.deleteEmbeddedDocuments("Item", offKilter);
+  const facing = tokenFacesLeft(ship.kind, heading, ship.artFacesLeft) ? "← right to left" : "→ left to right";
+  return `Heading is now ${heading}° (${facing})${offKilter.length || wasModuleOffKilter ? "; the starship is no longer off-kilter" : ""}.`;
+}
+
 /* ---------------------------------- dialogs ---------------------------------- */
 
 async function numberDialog(title, fields, okLabel = "Apply") {
@@ -940,6 +960,12 @@ export class PCStarshipSheet extends StarshipSheetBase {
       roll = `<p>Roll: ${check.skills.map((s) => SKILL_LABELS[s]).join(" or ")}${against}${check.secret ? " (secret, rolled by the GM)" : ""}.</p>`;
     }
     const malf = st?.malfunctioning && id !== 610 ? `<p class="sss-warn">This station is malfunctioning: its station actions can't be used until someone uses Repair Station.</p>` : "";
+    // Change Heading turns the starship around and rights it if it's off-kilter.
+    let result = "";
+    if (id === 598) {
+      if (st?.malfunctioning) ui.notifications.warn("The pilot's console is malfunctioning, so the heading wasn't changed.");
+      else result = `<p><strong>${esc(await changeHeading(this.document))}</strong></p>`;
+    }
     await ChatMessage.create({
       speaker: this.#speaker(st),
       content: `<div class="sss-chat">
@@ -947,6 +973,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
         <div class="sss-traits-list">${a.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>
         <p>${esc(this.document.name)} · ${esc(st?.name ?? "")}${a.freq ? ` · <em>${esc(a.freq)}</em>` : ""}</p>
         ${roll}
+        ${result}
         ${malf}
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
       </div>`
@@ -1214,6 +1241,8 @@ export class NPCStarshipSheet extends StarshipSheetBase {
     const malf = station && this.ship.stations.some((st) => st.type === station && st.malfunctioning);
     if (malf) ui.notifications.warn(`${a.name}: the ${NPC_STATIONS[station]} is malfunctioning.`);
     const save = a.save ? `<p>The target${a.range ? ` within ${esc(a.range)}` : ""} attempts a <strong>${SAVE_LABELS[a.save]} save</strong>.</p>` : "";
+    // Change Heading turns the starship around and rights it if it's off-kilter.
+    const result = a.key === "change-heading" && !malf ? `<p><strong>${esc(await changeHeading(this.document))}</strong></p>` : "";
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
       content: `<div class="sss-chat">
@@ -1221,6 +1250,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
         ${a.traits.length ? `<div class="sss-traits-list">${a.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}</div>` : ""}
         <p>${esc(this.document.name)}${station ? ` · ${esc(NPC_STATIONS[station])}` : ""}${a.freq ? ` · <em>${esc(a.freq)}</em>` : ""}</p>
         ${save}
+        ${result}
         ${malf ? `<p class="sss-warn">This station is malfunctioning.</p>` : ""}
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a>
       </div>`

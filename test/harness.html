@@ -461,6 +461,25 @@ try {
   await main.ensureOffKilter();
   check("Off-Kilter is created in a Starship Conditions compendium", [created[0], created[1], savedUuid],
     [{ label: "Starship Conditions", name: "starship-conditions", type: "Item" }, ["Off-Kilter", "effect", "off-kilter", "world.starship-conditions", ["attack", "reflex"]], "Compendium.world.starship-conditions.Item.new1"]);
+
+  // Change Heading reverses the heading, turns the tokens and ends off-kilter
+  const hdShip = { kind: "npc", heading: 0, artFacesLeft: false, stations: [], effects: [{ label: "Off-kilter, −1 zone Speed for 1 round (graviton Nova Blast)", speed: -1, offKilter: true }] };
+  const deleted = [];
+  const hdUpdates = [];
+  const hdActor = { id: "n1", isToken: false, type: "npc", flags: { "sf2e-starship-sheets": { ship: hdShip } }, prototypeToken: { texture: { scaleX: -1 } },
+    itemTypes: { effect: [{ id: "e1", slug: "off-kilter" }, { id: "e2", slug: "effect-aim" }] },
+    update: async (u) => {
+      hdUpdates.push(u);
+      if ("flags.sf2e-starship-sheets.ship.heading" in u) hdShip.heading = u["flags.sf2e-starship-sheets.ship.heading"];
+      if ("flags.sf2e-starship-sheets.ship.effects" in u) hdShip.effects = u["flags.sf2e-starship-sheets.ship.effects"];
+    },
+    deleteEmbeddedDocuments: async (type, ids) => deleted.push(...ids) };
+  globalThis.game.scenes = [];
+  const said = await main.changeHeading(hdActor);
+  check("Change Heading: NPC 0° → 180°, token turned to face right", [hdShip.heading, hdUpdates[1]?.["prototypeToken.texture.scaleX"]], [180, 1]);
+  check("Change Heading removes the Off-Kilter effect only", deleted, ["e1"]);
+  check("Change Heading keeps the Nova Blast Speed penalty but ends its off-kilter", hdShip.effects, [{ label: "−1 zone Speed for 1 round (graviton Nova Blast)", speed: -1, offKilter: false }]);
+  check("Change Heading chat text", said, "Heading is now 180° (→ left to right); the starship is no longer off-kilter.");
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

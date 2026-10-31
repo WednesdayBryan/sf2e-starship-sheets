@@ -1,6 +1,6 @@
 # SF2e Starship Sheets — project status
 
-Last updated: October 31, 2026. Current release: **v0.11.0**.
+Last updated: October 31, 2026. Current release: **v0.11.1**.
 
 ## Where things are
 
@@ -20,7 +20,7 @@ Last updated: October 31, 2026. Current release: **v0.11.0**.
 | `sf2e-starship-sheets/scripts/render.mjs` | HTML for both sheets |
 | `sf2e-starship-sheets/scripts/main.mjs` | Foundry code: sheets, rolls, chat, hooks, Create Starship button |
 | `sf2e-starship-sheets/README.md` | Full description of every feature |
-| `test/harness.html` | Test page: 137 rules/render checks plus previews of both sheets |
+| `test/harness.html` | Test page: 141 rules/render checks plus previews of both sheets |
 | `test/serve.ps1` | Tiny local web server for the test page (`http://localhost:8767/`) |
 | `build.ps1` | Builds `dist/module.zip` and `dist/module.json` for a release |
 | `dist/` | Build output (not in Git) |
@@ -42,7 +42,7 @@ Last updated: October 31, 2026. Current release: **v0.11.0**.
 ## Known limits
 
 - Juke is the only station action whose result posts condition links; other actions' conditions are applied by hand.
-- The Off-Kilter effect has no duration; remove it when the starship uses Change Heading or Juke's 1 round ends.
+- The Off-Kilter effect has no duration: Change Heading removes it automatically; otherwise remove it when Juke's 1 round ends.
 - Nova Strike / Nova Surge roll through the system's own Strike, so their hit/miss doesn't include an NPC's Evade bonus. Add it by hand.
 - Ending effects at the right time (Evade, Speed penalties, persistent damage) is manual.
 - Not automated: each station action's effect beyond its roll, Area Fire / Auto-Fire DCs, off-guard from heading, the sensor map, drone deployment, upgrade grade improvements, spell slot tracking.
@@ -81,3 +81,4 @@ Git and the GitHub CLI are installed on this PC, and the CLI is signed in as Wed
 | 0.9.1 | NPC Evade / Stick to Cover AC |
 | 0.10.0 | NPC magic conduit spells |
 | 0.11.0 | Playtest fixes: gun proficiency, weapon specialization, Aim; Area Fire and Auto-Fire with save DCs; Primary Target; Juke condition links; Off-Kilter compendium |
+| 0.11.1 | Change Heading reverses the heading, turns the tokens and removes off-kilter |
