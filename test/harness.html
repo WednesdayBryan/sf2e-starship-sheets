@@ -17,7 +17,7 @@
 <div class="sf2e-starship-sheets frame" id="pc"><div class="window-content"></div></div>
 <div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
 <script type="module">
-import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon, tokenFacesLeft, predicateTest, weaponRollOptions, helmerRank, specializationBonus } from "../sf2e-starship-sheets/scripts/logic.mjs";
+import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon, tokenFacesLeft, predicateTest, weaponRollOptions, helmerRank, specializationBonus, attackFromBehind } from "../sf2e-starship-sheets/scripts/logic.mjs";
 import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
 
 const out = [];
@@ -480,6 +480,29 @@ try {
   check("Change Heading removes the Off-Kilter effect only", deleted, ["e1"]);
   check("Change Heading keeps the Nova Blast Speed penalty but ends its off-kilter", hdShip.effects, [{ label: "−1 zone Speed for 1 round (graviton Nova Blast)", speed: -1, offKilter: false }]);
   check("Change Heading chat text", said, "Heading is now 180° (→ left to right); the starship is no longer off-kilter.");
+
+  // Heading: attacks from behind treat the target as off-guard
+  const L2 = await import("../sf2e-starship-sheets/scripts/logic.mjs");
+  check("Behind: target heads left, attacker to its right", L2.attackFromBehind({ targetX: 400, attackerX: 700, targetHeadsLeft: true, zoneWidth: 100 }), true);
+  check("Ahead: target heads left, attacker to its left", L2.attackFromBehind({ targetX: 400, attackerX: 100, targetHeadsLeft: true, zoneWidth: 100 }), false);
+  check("Same zone always counts as ahead", L2.attackFromBehind({ targetX: 400, attackerX: 460, targetHeadsLeft: true, zoneWidth: 100 }), false);
+  check("Target heading right is behind from the left", L2.attackFromBehind({ targetX: 400, attackerX: 100, targetHeadsLeft: false, zoneWidth: 100 }), true);
+  globalThis.canvas = { grid: { size: 100 }, scene: { id: "s" } };
+  globalThis.game.settings.get = (m, k) => (k === "zoneWidth" ? 1 : "");
+  globalThis.fromUuidSync = (uuid) => (uuid === "effugy" ? effugy : null);
+  const npcRaider = { type: "npc", name: "Raider", attributes: { ac: { value: 20 } }, hasCondition: () => false, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", heading: 0 } } } };
+  let attackerX = 700;
+  effSheet.document = { ...effSheet.document, getActiveTokens: () => [{ center: { x: attackerX }, scene: { id: "s" } }] };
+  globalThis.game.user.targets = new Set([{ actor: npcRaider, center: { x: 400 } }]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.strike.call(effSheet, {}, { dataset: { station: "5", weapon: "0", map: "0" } });
+  check("Party ship firing from behind an NPC heading 0: AC 20 - 2", strikeLog.at(-1).includes("AC 18, off-guard: attacked from behind"), true);
+  attackerX = 100;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.strike.call(effSheet, {}, { dataset: { station: "5", weapon: "0", map: "0" } });
+  check("Firing from ahead: normal AC 20", [strikeLog.at(-1).includes("(AC 20)"), strikeLog.at(-1).includes("behind")], [true, false]);
+  npcRaider.hasCondition = (c) => c === "off-guard";
+  attackerX = 700;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.strike.call(effSheet, {}, { dataset: { station: "5", weapon: "0", map: "0" } });
+  check("Already off-guard: no extra -2 from behind", strikeLog.at(-1).includes("(AC 20)"), true);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

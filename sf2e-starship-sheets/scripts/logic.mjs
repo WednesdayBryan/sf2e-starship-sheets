@@ -477,6 +477,17 @@ export function npcWeapon(entry, level, index = 0) {
 export const normalizeHeading = (heading) => (Number(heading) === 180 ? 180 : 0);
 
 /**
+ * Tech Core heading rule: a starship is off-guard to attacks made from the opposite direction of its heading,
+ * but starships in the same zone always treat each other as ahead. Positions are the tokens' x coordinates;
+ * `zoneWidth` is how far apart (in the same units) two ships must be to be in different zones.
+ */
+export function attackFromBehind({ targetX, attackerX, targetHeadsLeft, zoneWidth }) {
+  const dx = attackerX - targetX;
+  if (!Number.isFinite(dx) || Math.abs(dx) < zoneWidth) return false;
+  return targetHeadsLeft ? dx > 0 : dx < 0;
+}
+
+/**
  * Whether a starship's token should face left (be mirrored). Heading 0 is left-to-right for the party's
  * starship and right-to-left for NPC starships; ship art is assumed to face right unless `artFacesLeft`.
  */

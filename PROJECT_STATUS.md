@@ -1,6 +1,6 @@
 # SF2e Starship Sheets — project status
 
-Last updated: October 31, 2026. Current release: **v0.11.1**.
+Last updated: October 31, 2026. Current release: **v0.12.0**.
 
 ## Where things are
 
@@ -20,7 +20,7 @@ Last updated: October 31, 2026. Current release: **v0.11.1**.
 | `sf2e-starship-sheets/scripts/render.mjs` | HTML for both sheets |
 | `sf2e-starship-sheets/scripts/main.mjs` | Foundry code: sheets, rolls, chat, hooks, Create Starship button |
 | `sf2e-starship-sheets/README.md` | Full description of every feature |
-| `test/harness.html` | Test page: 141 rules/render checks plus previews of both sheets |
+| `test/harness.html` | Test page: 148 rules/render checks plus previews of both sheets |
 | `test/serve.ps1` | Tiny local web server for the test page (`http://localhost:8767/`) |
 | `build.ps1` | Builds `dist/module.zip` and `dist/module.json` for a release |
 | `dist/` | Build output (not in Git) |
@@ -82,3 +82,4 @@ Git and the GitHub CLI are installed on this PC, and the CLI is signed in as Wed
 | 0.10.0 | NPC magic conduit spells |
 | 0.11.0 | Playtest fixes: gun proficiency, weapon specialization, Aim; Area Fire and Auto-Fire with save DCs; Primary Target; Juke condition links; Off-Kilter compendium |
 | 0.11.1 | Change Heading reverses the heading, turns the tokens and removes off-kilter |
+| 0.12.0 | Attacks from behind: target is off-guard (-2 AC) by heading and token positions; Zone width setting |

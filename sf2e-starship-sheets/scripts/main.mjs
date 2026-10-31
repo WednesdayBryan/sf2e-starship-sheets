@@ -9,7 +9,7 @@ import {
 } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon,
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind,
   npcWeaponOffKilter, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
@@ -351,14 +351,58 @@ function helmerDC(helmer, check) {
 }
 
 /** AC of the first targeted token, if any. */
-function targetAC() {
+/** The starship's token on the current scene, if any. */
+function shipToken(actor) {
+  const tokens = actor?.getActiveTokens?.() ?? [];
+  return tokens.find((t) => t.scene?.id === canvas?.scene?.id) ?? tokens[0] ?? null;
+}
+
+/** Whether the attacking starship is behind the targeted starship (so the target is off-guard to the attack). */
+function behindTarget(attacker) {
+  const target = [...game.user.targets][0];
+  if (!target?.actor || !isStarship(target.actor) || !attacker) return false;
+  const source = shipToken(attacker);
+  if (!source || source === target) return false;
+  const ship = getShip(target.actor);
+  const zones = Number(game.settings.get(MODULE_ID, "zoneWidth")) || 1;
+  return attackFromBehind({
+    targetX: target.center?.x,
+    attackerX: source.center?.x,
+    targetHeadsLeft: tokenFacesLeft(ship.kind, ship.heading, false),
+    zoneWidth: (canvas?.grid?.size ?? 100) * zones
+  });
+}
+
+/**
+ * The targeted starship's AC for an attack from `attacker`: -2 when attacked from behind (off-guard), unless the
+ * target is already off-guard.
+ */
+function targetAC(attacker = null) {
   const target = [...game.user.targets][0]?.actor;
   if (!target) return null;
-  if (target.type === "vehicle" && isStarship(target)) return { name: target.name, ac: derivedFor(target).derived.ac.total };
-  const ac = target.attributes?.ac?.value ?? target.system?.attributes?.ac?.value;
-  // An NPC starship's Evade or Stick to Cover adds a circumstance bonus on top of its stat block AC.
-  const circumstance = isStarship(target) ? Number(getShip(target).acCircumstance) || 0 : 0;
-  return Number.isFinite(ac) ? { name: target.name, ac: ac + circumstance } : null;
+  let ac;
+  let offGuard;
+  if (target.type === "vehicle" && isStarship(target)) {
+    const derived = derivedFor(target).derived;
+    ac = derived.ac.total;
+    offGuard = derived.conditions?.offGuard;
+  } else {
+    const base = target.attributes?.ac?.value ?? target.system?.attributes?.ac?.value;
+    // An NPC starship's Evade or Stick to Cover adds a circumstance bonus on top of its stat block AC.
+    ac = Number.isFinite(base) ? base + (isStarship(target) ? Number(getShip(target).acCircumstance) || 0 : 0) : NaN;
+    offGuard = !!target.hasCondition?.("off-guard");
+  }
+  if (!Number.isFinite(ac)) return null;
+  const behind = !offGuard && behindTarget(attacker);
+  return { name: target.name, ac: behind ? ac - 2 : ac, behind };
+}
+
+/** For attacks the system rolls itself: +2 to the attack instead of -2 to the AC when attacking from behind. */
+function behindModifiers(attacker) {
+  const target = [...game.user.targets][0]?.actor;
+  if (!behindTarget(attacker) || target?.hasCondition?.("off-guard")) return undefined;
+  const Modifier = game.pf2e?.Modifier ?? game.sf2e?.Modifier;
+  return Modifier ? [new Modifier({ slug: "off-guard-from-behind", label: "Target off-guard (attacked from behind)", modifier: 2 })] : undefined;
 }
 
 async function rollCheck({ label, mod, speaker, dc = null, extra = "" }) {
@@ -369,7 +413,7 @@ async function rollCheck({ label, mod, speaker, dc = null, extra = "" }) {
   let degree = null;
   if (dc) {
     degree = degreeOfSuccess(roll.total, die, dc.ac);
-    outcome = `<div class="sss-outcome sss-degree-${degree}">vs ${esc(dc.name)} (AC ${dc.ac}): <strong>${DEGREE_LABELS[degree]}</strong></div>`;
+    outcome = `<div class="sss-outcome sss-degree-${degree}">vs ${esc(dc.name)} (AC ${dc.ac}${dc.behind ? ", off-guard: attacked from behind" : ""}): <strong>${DEGREE_LABELS[degree]}</strong></div>`;
   }
   await roll.toMessage({ speaker, flavor: `<strong>${esc(label)}</strong> ${extra}${outcome}` });
   return { degree };
@@ -816,12 +860,12 @@ export class PCStarshipSheet extends StarshipSheetBase {
     if (!entry) return ui.notifications.warn(`${actor.name} can't cast spells.`);
     const mi = Number(target.dataset.map) || 0;
     const penalty = [0, -5, -10][mi];
-    const ac = targetAC();
+    const ac = targetAC(this.document);
     const label = `Cosmic Cannon: spell attack${mi ? ` (MAP ${penalty})` : ""}`;
     const Modifier = game.pf2e?.Modifier ?? game.sf2e?.Modifier;
     if (penalty === 0 || Modifier) {
       const params = { event, label };
-      if (ac) params.dc = { value: ac.ac, label: `${ac.name}'s AC` };
+      if (ac) params.dc = { value: ac.ac, label: `${ac.name}'s AC${ac.behind ? " (off-guard: attacked from behind)" : ""}` };
       if (penalty) params.modifiers = [new Modifier({ slug: "multiple-attack-penalty", label: "Multiple Attack Penalty", modifier: penalty })];
       return entry.statistic.roll(params);
     }
@@ -905,7 +949,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
     if (!s) return;
     const strike = s.strikes.weapon.strike;
     const mi = target.dataset.surge === "1" ? 0 : Number(target.dataset.map) || 0;
-    const roll = await strike.variants?.[mi]?.roll({ event });
+    const roll = await strike.variants?.[mi]?.roll({ event, modifiers: behindModifiers(this.document) });
     const degree = roll?.degreeOfSuccess ?? roll?.options?.degreeOfSuccess ?? null;
     await applyEffectsToTarget(novaEffects("weapon", s.info.attunement, Number.isFinite(degree) ? degree : -1));
   }
@@ -927,7 +971,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       label: `Nova Blast (${s.info.attunement})${mi ? ` (MAP ${penalty})` : ""}`,
       mod: s.info.solarFlare.attack + penalty,
       speaker: s.speaker,
-      dc: targetAC()
+      dc: targetAC(this.document)
     });
     await applyEffectsToTarget(novaEffects("blast", s.info.attunement, degree ?? -1));
   }
@@ -1014,7 +1058,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       label: `${w.name} Strike${mapText}`,
       mod,
       speaker: this.#speaker(st),
-      dc: targetAC(),
+      dc: targetAC(this.document),
       extra: `<div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}${w.tracking ? `<span class="sss-trait">Tracking +${w.tracking}</span>` : ""}</div>`
     });
   }
@@ -1086,7 +1130,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       label: `${w.name}: Primary Target`,
       mod: w.attack,
       speaker: this.#speaker(st),
-      dc: targetAC(),
+      dc: targetAC(this.document),
       extra: `<div>Free action, no multiple attack penalty. On a hit, if this target succeeds at its save against the ${w.automatic && !w.area ? "Auto-Fire" : "Area Fire"}, it gets a failure instead.</div>`
     });
   }
@@ -1289,7 +1333,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       label: `Cosmic Cannon: spell attack${mi ? ` (MAP ${penalty})` : ""}`,
       mod: npcSpellAttack(this.document.level, this.ship.spellTier) + penalty,
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
-      dc: targetAC()
+      dc: targetAC(this.document)
     });
   }
 
@@ -1381,7 +1425,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       label: `${w.name} Strike${mi ? ` (MAP ${penalty})` : ""}`,
       mod: w.attack + penalty,
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
-      dc: targetAC(),
+      dc: targetAC(this.document),
       extra: `<div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}<span class="sss-trait">range ${w.range} zones</span></div>`
     });
   }
@@ -1437,7 +1481,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
   }
 
   static async #onStrike(event, target) {
-    await this.#strike(target)?.variants?.[Number(target.dataset.variant)]?.roll({ event });
+    await this.#strike(target)?.variants?.[Number(target.dataset.variant)]?.roll({ event, modifiers: behindModifiers(this.document) });
   }
 
   static async #onDamageRoll(event, target) {
@@ -1566,6 +1610,14 @@ Hooks.once("init", () => {
     console.warn(`${MODULE_ID} | Needs the Starfinder 2e system; staying inactive.`);
     return;
   }
+  game.settings.register(MODULE_ID, "zoneWidth", {
+    name: "Zone width (grid squares)",
+    hint: "For the heading rule: starships closer than this left-to-right are in the same zone, so neither counts as attacking from behind.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 1
+  });
   game.settings.register(MODULE_ID, "offKilterUuid", { scope: "world", config: false, type: String, default: "" });
   game.settings.register(MODULE_ID, "shieldsAbsorb", {
     name: "Shields absorb system damage",
