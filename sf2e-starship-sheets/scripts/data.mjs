@@ -414,16 +414,37 @@ export const STRIKE_DAMAGE_EXPRESSION = [
 ];
 
 /** Expansion bay facilities (Tech Core). */
+const BAY_URL = "tactical-starship-combat/expansion-bays/";
+
+/** Expansion bays that take an expansion bay slot, with a one-line summary of what each provides. */
 export const EXPANSION_BAY_OPTIONS = {
-  "data-center": { name: "Data Center", url: "tactical-starship-combat/expansion-bays/1-data-center" },
-  "fabrication-lab": { name: "Fabrication Lab", url: "tactical-starship-combat/expansion-bays/2-fabrication-lab" },
-  "holo-den": { name: "Holo Den", url: "tactical-starship-combat/expansion-bays/3-holo-den" },
-  "medical-bay": { name: "Medical Bay", url: "tactical-starship-combat/expansion-bays/4-medical-bay" },
-  "passenger-quarters": { name: "Passenger Quarters", url: "tactical-starship-combat/expansion-bays/5-passenger-quarters" },
-  "science-lab": { name: "Science Lab", url: "tactical-starship-combat/expansion-bays/6-science-lab" },
-  "crew-quarters": { name: "Crew Quarters", url: "tactical-starship-combat/expansion-bays/7-crew-quarters" },
-  lounge: { name: "Lounge", url: "tactical-starship-combat/expansion-bays/8-lounge" },
-  "mess-bay": { name: "Mess Bay", url: "tactical-starship-combat/expansion-bays/9-mess-bay" }
+  "data-center": { name: "Data Center", url: `${BAY_URL}1-data-center`, summary: "Access Infosphere and other downtime remotely from anywhere on board (not while the scanners are malfunctioning)" },
+  "fabrication-lab": { name: "Fabrication Lab", url: `${BAY_URL}2-fabrication-lab`, summary: "Craft and Repair on board with no setup time" },
+  "holo-den": { name: "Holo Den", url: `${BAY_URL}3-holo-den`, summary: "Retrain during downtime without a mentor" },
+  "medical-bay": { name: "Medical Bay", url: `${BAY_URL}4-medical-bay`, summary: "+1 item bonus to Medicine inside; long-term rest restores more Hit Points" },
+  "passenger-quarters": { name: "Passenger Quarters", url: `${BAY_URL}5-passenger-quarters`, summary: "Houses passengers, prisoners, visitors and other non-crew" },
+  "science-lab": { name: "Science Lab", url: `${BAY_URL}6-science-lab`, summary: "+1 item bonus to Recall Knowledge to identify items and creatures, and to related Research" }
+};
+
+/** Passenger quarters types that take a slot (Basic passenger quarters are free; see UNIVERSAL_BAYS). */
+export const PASSENGER_QUARTERS_TYPES = {
+  prison: { name: "Prison", summary: "locked cells; prisoners are observed and restrained" },
+  luxury: { name: "Luxury", summary: "VIP suites; easier Diplomacy with guests (Gather Information, Make an Impression, Request)" }
+};
+
+/** Universal expansion bays: they don't take an expansion bay slot. */
+export const UNIVERSAL_BAYS = {
+  "crew-quarters": { name: "Crew Quarters", url: `${BAY_URL}7-crew-quarters` },
+  lounge: { name: "Lounge", url: `${BAY_URL}8-lounge`, summary: "Recreation space of any size" },
+  "mess-bay": { name: "Mess Bay", url: `${BAY_URL}9-mess-bay`, summary: "Meals for the crew, plus 30 days of travel rations refilled at port" }
+};
+
+/** Crew quarters types (one per starship). Comfortable quarters add an expansion bay slot. */
+export const CREW_QUARTERS_TYPES = {
+  bunks: { name: "Bunks", summary: "+1 item bonus to Perception for initiative while resting in the bunks" },
+  budget: { name: "Budget", summary: "Hidden caches: +1 item bonus to Conceal items stored there (and to Hide in them)" },
+  comfortable: { name: "Comfortable", summary: "A common area for the whole crew; the starship gains 1 extra expansion bay slot", extraBays: 1 },
+  extravagant: { name: "Extravagant", summary: "A full night's rest takes only 4 hours" }
 };
 
 export const RULES_URL = "rules/1329-tactical-starship-combat";

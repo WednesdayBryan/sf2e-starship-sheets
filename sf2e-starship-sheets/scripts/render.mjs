@@ -1,9 +1,9 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { effectiveSpeed, normalizeHeading, novaBlastDamage, npcSpellAttack, partsLabel } from "./logic.mjs";
+import { EXPANSION_BAYS, bayCount, effectiveSpeed, normalizeHeading, novaBlastDamage, npcSpellAttack, partsLabel } from "./logic.mjs";
 import {
-  NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS, SPELL_TIERS, ACTIONS,
+  NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS, SPELL_TIERS, ACTIONS, CREW_QUARTERS_TYPES, PASSENGER_QUARTERS_TYPES, UNIVERSAL_BAYS,
   AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
 
 export const esc = (v) =>
@@ -276,25 +276,50 @@ export function renderPCSheet(vm) {
 
 /** The facility installed in a bay: its key, falling back to a facility typed by name in older versions. */
 export function bayKey(bay) {
-  if (bay?.key) return bay.key;
+  if (bay?.key) return bay.key in EXPANSION_BAY_OPTIONS ? bay.key : "";
   const name = String(bay?.name ?? "").trim().toLowerCase();
   return Object.entries(EXPANSION_BAY_OPTIONS).find(([, o]) => o.name.toLowerCase() === name)?.[0] ?? "";
 }
 
 function baysTab({ ship, editable }) {
+  const quarters = CREW_QUARTERS_TYPES[ship.crewQuarters] ? ship.crewQuarters : "bunks";
+  const slots = bayCount({ ...ship, crewQuarters: quarters });
+  const universalRow = (label, control, summary, url) => `<div class="sss-bay">
+      <span class="sss-bay-n">✓</span><span class="sss-bay-name">${label}${control}</span>
+      <span class="sss-bay-link">${esc(summary)} ${link(url, "↗")}</span></div>`;
+  const universal = [
+    universalRow(
+      "Crew Quarters ",
+      `<select name="ship.crewQuarters"${dis(editable)}>${Object.entries(CREW_QUARTERS_TYPES).map(([k, t]) => opt(k, t.name, quarters)).join("")}</select>`,
+      CREW_QUARTERS_TYPES[quarters].summary,
+      UNIVERSAL_BAYS["crew-quarters"].url
+    ),
+    universalRow("Lounge", "", UNIVERSAL_BAYS.lounge.summary, UNIVERSAL_BAYS.lounge.url),
+    universalRow("Mess Bay", "", UNIVERSAL_BAYS["mess-bay"].summary, UNIVERSAL_BAYS["mess-bay"].url),
+    `<div class="sss-bay"><span class="sss-bay-n"></span>
+      <label class="sss-malf"><input type="checkbox" name="ship.basicPassengerQuarters"${ship.basicPassengerQuarters ? " checked" : ""}${dis(editable)}> Basic Passenger Quarters</label>
+      <span class="sss-bay-link">Cots and seating for non-crew; free ${link(EXPANSION_BAY_OPTIONS["passenger-quarters"].url, "↗")}</span></div>`
+  ].join("");
+  const selected = Array.from({ length: slots }, (_, i) => {
+    const b = ship.bays[i] ?? {};
+    const key = bayKey(b);
+    const facility = EXPANSION_BAY_OPTIONS[key];
+    const passengerType = PASSENGER_QUARTERS_TYPES[b.type] ? b.type : "prison";
+    const typeSelect = key === "passenger-quarters"
+      ? ` <select name="ship.bays.${i}.type"${dis(editable)}>${Object.entries(PASSENGER_QUARTERS_TYPES).map(([k, t]) => opt(k, t.name, passengerType)).join("")}</select>`
+      : "";
+    const summary = facility ? (key === "passenger-quarters" ? `${facility.summary} — ${PASSENGER_QUARTERS_TYPES[passengerType].summary}` : facility.summary) : "";
+    return `<div class="sss-bay"><span class="sss-bay-n">${i + 1}</span>
+      <span class="sss-bay-name"><select name="ship.bays.${i}.key"${dis(editable)}>${opt("", "— Empty bay —", key)}${Object.entries(EXPANSION_BAY_OPTIONS)
+        .map(([k, o]) => opt(k, o.name, key))
+        .join("")}</select>${typeSelect}</span>
+      <span class="sss-bay-link">${facility ? `${esc(summary)} ${link(facility.url, "↗")}` : ""}</span></div>`;
+  }).join("");
   return `<div class="sss-bays">
-    <p class="sss-hint">${link(EXPANSION_BAYS_URL, "Expansion bays")} — choose the facility installed in each bay.</p>
-    ${ship.bays
-      .map((b, i) => {
-        const key = bayKey(b);
-        const facility = EXPANSION_BAY_OPTIONS[key];
-        return `<div class="sss-bay"><span class="sss-bay-n">${i + 1}</span>
-        <select name="ship.bays.${i}.key"${dis(editable)}>${opt("", "— Empty bay —", key)}${Object.entries(EXPANSION_BAY_OPTIONS)
-          .map(([k, o]) => opt(k, o.name, key))
-          .join("")}</select>
-        <span class="sss-bay-link">${facility ? link(facility.url, `${facility.name} benefits on AoN ↗`) : ""}</span></div>`;
-      })
-      .join("")}
+    <label class="sss-section">Universal expansion bays <span class="sss-hint">free; they don't take a slot</span></label>
+    ${universal}
+    <label class="sss-section">Selected expansion bays <span class="sss-hint">${slots} slots${slots > EXPANSION_BAYS ? " (4 + 1 from comfortable crew quarters)" : ""} · ${link(EXPANSION_BAYS_URL, "all expansion bays")}</span></label>
+    ${selected}
   </div>`;
 }
 

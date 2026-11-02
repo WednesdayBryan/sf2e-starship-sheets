@@ -173,7 +173,10 @@
 
 /* bays */
 .sss-bays { display: flex; flex-direction: column; gap: 6px; }
-.sss-bay { display: grid; grid-template-columns: 24px 220px 1fr; gap: 6px; align-items: center; }
+.sss-bay { display: grid; grid-template-columns: 24px minmax(160px, 280px) minmax(0, 1fr); gap: 6px; align-items: center; }
+.sss-bay-name { display: flex; gap: 4px; align-items: center; font-weight: 600; }
+.sss-bay-name select { flex: 1; }
+.sss-bay-link { font-size: 12px; color: var(--sss-dim); }
 .sss-bay-n { font-weight: 800; color: var(--sss-accent); text-align: center; }
 
 /* NPC */

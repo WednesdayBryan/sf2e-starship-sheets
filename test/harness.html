@@ -216,6 +216,7 @@ document.getElementById("results").innerHTML = out.join("\n");
 
 // Load main.mjs against minimal Foundry stand-ins: proves it parses and registers.
 const registered = [];
+Math.clamp ??= (n, lo, hi) => Math.min(Math.max(n, lo), hi); // Foundry adds this helper
 globalThis.foundry = {
   applications: {
     sheets: { ActorSheetV2: class {} },
@@ -297,10 +298,25 @@ try {
   check("Clicking Expansion Bays switches tab", [sheet._tab, rendered], ["bays", 1]);
   const tabHtml = (tab) => { const el = document.createElement("div"); el.innerHTML = renderPCSheet({ name: "x", img: "", editable: true, ship, derived: d, hp: { value: 1, max: 78 }, hpField: "h", crewOptions: [], tab }); return el; };
   const bays = tabHtml("bays");
-  check("Bays: 4 dropdowns of 9 facilities + empty", [bays.querySelectorAll(".sss-bay select").length, bays.querySelector('[name="ship.bays.1.key"]').options.length], [4, 10]);
-  check("Bay typed as 'Medical Bay' becomes the Medical Bay choice with its AoN link", [bays.querySelector('[name="ship.bays.0.key"]').value, bays.querySelector(".sss-bay-link a")?.getAttribute("href")],
+  const slotSel = (el, i) => el.querySelector(`[name="ship.bays.${i}.key"]`);
+  check("Bays: universal crew quarters (Bunks by default), 4 slots of 6 facilities + empty",
+    [bays.querySelector('[name="ship.crewQuarters"]').value, bays.querySelectorAll('[name$=".key"]').length, slotSel(bays, 1).options.length], ["bunks", 4, 7]);
+  check("Lounge and Mess Bay are listed as free", [bays.textContent.includes("Lounge"), bays.textContent.includes("Mess Bay"), !!bays.querySelector('[name="ship.basicPassengerQuarters"]')], [true, true, true]);
+  check("Bay typed as 'Medical Bay' becomes the Medical Bay choice with its summary and AoN link", [slotSel(bays, 0).value, slotSel(bays, 0).closest(".sss-bay").querySelector(".sss-bay-link a")?.getAttribute("href")],
     ["medical-bay", "https://2e.aonsrd.com/tactical-starship-combat/expansion-bays/4-medical-bay"]);
-  check("Empty bay has no link", bays.querySelectorAll(".sss-bay")[1].querySelector(".sss-bay-link a"), null);
+  const bayHtml = (over) => { const el = document.createElement("div"); el.innerHTML = renderPCSheet({ name: "x", img: "", editable: true, ship: { ...ship, ...over }, derived: d, hp: { value: 1, max: 78 }, hpField: "h", crewOptions: [], tab: "bays" }); return el; };
+  const group = bayHtml({ crewQuarters: "comfortable", bays: [
+    { key: "data-center" }, { key: "fabrication-lab" }, { key: "holo-den" }, { key: "passenger-quarters", type: "prison" }, { key: "science-lab" }] });
+  check("Comfortable crew quarters: 5 slots holding the group's 5 bays", [...group.querySelectorAll('[name$=".key"]')].map((s) => s.value),
+    ["data-center", "fabrication-lab", "holo-den", "passenger-quarters", "science-lab"]);
+  check("Comfortable crew quarters summary and Passenger Quarters type", [group.textContent.includes("1 extra expansion bay slot"), group.querySelector('[name="ship.bays.3.type"]').value], [true, "prison"]);
+  const legacy = bayHtml({ bays: [{ key: "crew-quarters" }, { key: "lounge" }, { key: "science-lab" }, { key: "" }] });
+  check("Older ships: crew quarters / lounge saved in a slot no longer take it", [...legacy.querySelectorAll('[name$=".key"]')].map((s) => s.value), ["", "", "science-lab", ""]);
+  const saved = structuredClone(ship);
+  Object.assign(saved, { crewQuarters: "comfortable", bays: [{ key: "lounge" }, { key: "data-center" }, { key: "passenger-quarters" }, { key: "" }] });
+  sheet.normalizeShip(saved, structuredClone(saved), {});
+  check("Saving: comfortable quarters add a 5th slot; lounge removed from its slot; passenger quarters default to Prison",
+    [saved.bays.length, saved.bays.map((b) => b.key), saved.bays[2].type], [5, ["", "data-center", "passenger-quarters", "", ""], "prison"]);
   check("Notes tab shows the notes box", !!tabHtml("notes").querySelector('textarea[name="ship.notes"]'), true);
   // Area and automatic weapons on the party sheet
   const g1 = document.querySelector("#pc .sss-gunnery");

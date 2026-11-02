@@ -2,13 +2,16 @@
  * Pure starship rules logic: no Foundry globals, so it can be tested in a plain browser.
  */
 import {
-  ACTION_CHECKS, ACTIONS, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, NPC_WEAPONS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
+  ACTION_CHECKS, ACTIONS, CREW_QUARTERS_TYPES, DRONES, FRAMES, GRADE_LABELS, NPC_TIERS, NPC_WEAPONS, STATIONS, STRIKE_ATTACK_BONUS, STRIKE_DAMAGE_AVERAGE,
   STRIKE_DAMAGE_EXPRESSION, SPELL_ATTACK, SPELL_TIERS, CREATURE_DC,
   UNIVERSAL_ACTIONS, UPGRADES, WEAPONS
 } from "./data.mjs";
 
 export const CUSTOM_SLOTS = 4;
 export const EXPANSION_BAYS = 4;
+
+/** Expansion bay slots: the frame's 4, plus 1 with comfortable crew quarters. */
+export const bayCount = (ship) => EXPANSION_BAYS + (CREW_QUARTERS_TYPES[ship?.crewQuarters]?.extraBays ?? 0);
 
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi);
 const int = (v, fallback = 0) => (Number.isFinite(Number(v)) && v !== "" && v !== null ? Math.trunc(Number(v)) : fallback);
@@ -34,6 +37,8 @@ export function defaultPCShip(frameKey = "explorer", level = 1) {
     traits: "Tech",
     resistances: "",
     notes: "",
+    crewQuarters: "bunks",
+    basicPassengerQuarters: false,
     effects: [],
     bays: Array.from({ length: EXPANSION_BAYS }, () => ({ key: "", name: "" })),
     stations: [

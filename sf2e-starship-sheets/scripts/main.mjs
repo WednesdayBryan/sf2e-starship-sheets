@@ -4,12 +4,13 @@
  * stored in flags, so disabling this module never leaves the world with actors it can't load.
  */
 import {
+  CREW_QUARTERS_TYPES, PASSENGER_QUARTERS_TYPES,
   ACTIONS, AON, EXPANSION_BAY_OPTIONS, FRAMES, MODULE_ID, NPC_STATION_ACTIONS, NPC_STATIONS, NPC_WEAPONS, SAVE_LABELS, SKILL_LABELS,
   npcActionByKey
 } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, vitalityTransferCap, vitalityRegen, vitalityTransfer,
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, bayCount, vitalityTransferCap, vitalityRegen, vitalityTransfer,
   npcWeaponOffKilter, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
@@ -856,7 +857,17 @@ export class PCStarshipSheet extends StarshipSheetBase {
 
   normalizeShip(ship, before, update) {
     ship.level = Math.clamp(Number(ship.level) || 1, 1, 20);
-    for (const bay of ship.bays) if ("key" in bay) bay.name = EXPANSION_BAY_OPTIONS[bay.key]?.name ?? "";
+    // Expansion bays: universal bays (crew quarters, lounge, mess bay) don't take a slot; comfortable crew
+    // quarters add a fifth slot. Keep one entry per slot, and drop universal bays saved in slots by older versions.
+    if (!CREW_QUARTERS_TYPES[ship.crewQuarters]) ship.crewQuarters = "bunks";
+    ship.basicPassengerQuarters = !!ship.basicPassengerQuarters;
+    ship.bays = Array.from({ length: Math.max(bayCount(ship), ship.bays.length) }, (_, i) => ship.bays[i] ?? { key: "", name: "" });
+    for (const bay of ship.bays) {
+      if (!("key" in bay) && bay.name) bay.key = Object.entries(EXPANSION_BAY_OPTIONS).find(([, o]) => o.name.toLowerCase() === String(bay.name).trim().toLowerCase())?.[0] ?? "";
+      if (!(bay.key in EXPANSION_BAY_OPTIONS)) bay.key = "";
+      bay.name = EXPANSION_BAY_OPTIONS[bay.key]?.name ?? "";
+      if (bay.key === "passenger-quarters" && !PASSENGER_QUARTERS_TYPES[bay.type]) bay.type = "prison";
+    }
     if (!(ship.frame in FRAMES)) ship.frame = "explorer";
     ship.acCircumstance = Number(ship.acCircumstance) || 0;
     ship.wrecked = Math.max(0, Number(ship.wrecked) || 0);

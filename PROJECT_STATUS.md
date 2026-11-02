@@ -1,6 +1,6 @@
 # SF2e Starship Sheets — project status
 
-Last updated: November 2, 2026. Current release: **v0.13.0**.
+Last updated: November 2, 2026. Current release: **v0.13.1**.
 
 ## Where things are
 
@@ -20,7 +20,7 @@ Last updated: November 2, 2026. Current release: **v0.13.0**.
 | `sf2e-starship-sheets/scripts/render.mjs` | HTML for both sheets |
 | `sf2e-starship-sheets/scripts/main.mjs` | Foundry code: sheets, rolls, chat, hooks, Create Starship button |
 | `sf2e-starship-sheets/README.md` | Full description of every feature |
-| `test/harness.html` | Test page: 160 rules/render checks plus previews of both sheets |
+| `test/harness.html` | Test page: 164 rules/render checks plus previews of both sheets |
 | `test/serve.ps1` | Tiny local web server for the test page (`http://localhost:8767/`) |
 | `build.ps1` | Builds `dist/module.zip` and `dist/module.json` for a release |
 | `dist/` | Build output (not in Git) |
@@ -35,7 +35,7 @@ Last updated: November 2, 2026. Current release: **v0.13.0**.
 
 ## What's done
 
-**Party starship sheet (vehicle actor):** frames and levels 1–20; six battle stations with automatic grades, helmers, upgrades and malfunctioning; AC (pilot's Piloting DC, helm bonus, Evade/Cover), saves, Speed, sensor range; HP/SP with damage, compromised, wrecked and hull integrity checks; gunnery Strikes and damage; station action checks rolled from the helmer's own sheet against the targeted ship's DC; magic conduit spells from the caster's spellcasting; Starship Weapon Crystal (Nova Strike/Surge from the solarian's solar weapon Strike with d10 damage, Nova Blast, attunement effects on the target); expansion bay dropdowns with AoN links; notes; heading 0°/180° that flips tokens; portrait and token image buttons; effects list; gunnery uses the gunner's class weapon proficiencies (e.g. operative guns), weapon specialization and operative Aim; area weapons fire only with Area Fire and automatic weapons add Auto-Fire, with save DCs (class DC + tracking); soldier Primary Target; Juke posts Off-Guard/Off-Kilter links; Change Heading reverses the heading and removes off-kilter; off-guard and off-kilter adjust the sheet's numbers.
+**Party starship sheet (vehicle actor):** frames and levels 1–20; six battle stations with automatic grades, helmers, upgrades and malfunctioning; AC (pilot's Piloting DC, helm bonus, Evade/Cover), saves, Speed, sensor range; HP/SP with damage, compromised, wrecked and hull integrity checks; gunnery Strikes and damage; station action checks rolled from the helmer's own sheet against the targeted ship's DC; magic conduit spells from the caster's spellcasting; Starship Weapon Crystal (Nova Strike/Surge from the solarian's solar weapon Strike with d10 damage, Nova Blast, attunement effects on the target); expansion bays (universal crew quarters/lounge/mess bay, 4 or 5 selected bays with summaries and AoN links); notes; heading 0°/180° that flips tokens; portrait and token image buttons; effects list; gunnery uses the gunner's class weapon proficiencies (e.g. operative guns), weapon specialization and operative Aim; area weapons fire only with Area Fire and automatic weapons add Auto-Fire, with save DCs (class DC + tracking); soldier Primary Target; Juke posts Off-Guard/Off-Kilter links; Change Heading reverses the heading and removes off-kilter; off-guard and off-kilter adjust the sheet's numbers.
 
 **NPC starship sheet (npc actor):** stat block from the system NPC (Edit stat block button opens the system sheet); SP, fortify, sensor range, Speed, battle stations; starship weapons (17 Tech Core weapons plus the Breaching Ram) with attack and damage from GM Core's creature tables at the ship's level, matching the Sword-class, Raider Trident and Jinsul Breacher stat blocks; common station actions (pilot's console, generator, gunnery) and default actions (Repair Self, Seek Starships); Evade/Stick to Cover AC bonus; magic conduit spells from GM Core's spell attack table; heading that flips tokens; area/automatic weapons use Area Fire/Auto-Fire with a GM Core creature DC; Change Heading; off-kilter penalties.
 
@@ -87,3 +87,4 @@ Git and the GitHub CLI are installed on this PC, and the CLI is signed in as Wed
 | 0.11.1 | Change Heading reverses the heading, turns the tokens and removes off-kilter |
 | 0.12.0 | Attacks from behind: target is off-guard (-2 AC) by heading and token positions; Zone width setting |
 | 0.13.0 | Second playtest: conduit spells expend real spell slots; mystic vitality network heals the ship; Nova Strike/Surge rolled by the sheet, d10 only with reach; Nova Blast uses the solar flare's dice; Aim mark fix |
+| 0.13.1 | Expansion bays: universal (free) bays with crew quarters types; selected bays with a 5th slot from comfortable crew quarters; summaries |
