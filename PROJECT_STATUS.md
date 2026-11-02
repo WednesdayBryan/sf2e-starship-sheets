@@ -1,6 +1,6 @@
 # SF2e Starship Sheets — project status
 
-Last updated: November 2, 2026. Current release: **v0.13.1**.
+Last updated: November 2, 2026. Current release: **v0.13.2**.
 
 ## Where things are
 
@@ -20,10 +20,11 @@ Last updated: November 2, 2026. Current release: **v0.13.1**.
 | `sf2e-starship-sheets/scripts/render.mjs` | HTML for both sheets |
 | `sf2e-starship-sheets/scripts/main.mjs` | Foundry code: sheets, rolls, chat, hooks, Create Starship button |
 | `sf2e-starship-sheets/README.md` | Full description of every feature |
-| `test/harness.html` | Test page: 164 rules/render checks plus previews of both sheets |
+| `test/harness.html` | Test page: 167 rules/render checks plus previews of both sheets |
 | `test/serve.ps1` | Tiny local web server for the test page (`http://localhost:8767/`) |
 | `build.ps1` | Builds `dist/module.zip` and `dist/module.json` for a release |
 | `dist/` | Build output (not in Git) |
+| `macros/` | GM Script macros that fill in NPC starships: Writ of Possession (level 8 Dread Dominator with a boarding refit), Mercy of Tomorrow (level 3 Flint-class medical transport) |
 
 ## Design decisions to keep
 
@@ -96,3 +97,4 @@ Git and the GitHub CLI are installed on this PC, and the CLI is signed in as Wed
 | 0.12.0 | Attacks from behind: target is off-guard (-2 AC) by heading and token positions; Zone width setting |
 | 0.13.0 | Second playtest: conduit spells expend real spell slots; mystic vitality network heals the ship; Nova Strike/Surge rolled by the sheet, d10 only with reach; Nova Blast uses the solar flare's dice; Aim mark fix |
 | 0.13.1 | Expansion bays: universal (free) bays with crew quarters types; selected bays with a 5th slot from comfortable crew quarters; summaries |
+| 0.13.2 | NPC Strikes show their range in zones, with an editable Zones box |

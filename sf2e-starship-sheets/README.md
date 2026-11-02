@@ -95,7 +95,7 @@ Give your players **Owner** permission on the player starship so they can use it
   - **Seek Starships** rolls Perception.
 - A malfunctioning station's actions are greyed out.
 
-Add special attacks and abilities as Strikes and actions with **Edit stat block**.
+Add special attacks and abilities as Strikes and actions with **Edit stat block**. Each Strike shows its range in zones ("range increment 3 zones", or "0 zones: targets in the same zone" for melee), with a **Zones** box to change it. The system measures range in feet, so give a ranged starship Strike a large maximum range and no increment in the system sheet; it then counts as ranged without foot-based range penalties.
 
 The NPC starship sheet shows the stat block from the NPC actor: Perception, skills, attributes, AC, saves, HP, Strikes and actions. It uses the system's own strike, damage, save and skill rolls. It also tracks Shield Points, fortify, sensor range, Speed in zones, heading, battle stations (malfunctioning stations are flagged) and compromised/wrecked.
 
