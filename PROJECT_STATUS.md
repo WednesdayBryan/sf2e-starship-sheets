@@ -47,7 +47,7 @@ Last updated: November 2, 2026. Current release: **v0.13.1**.
 
 - **KaaZmesh** (solarian) uses the Starship Weapon Crystal. Nova Strike/Surge damage uses d10s only when the solar weapon has reach; otherwise it keeps the weapon's own die.
 - **Effugy** (operative) is a Striker. That specialization moves his martial gun increases to simple guns, so a martial gun such as the Chain Repeater correctly rolls at Trained, not Master. Not a bug.
-- The party's **mystic** heals the ship from the vitality network (Transmute Vitality on the Engineering station).
+- The party's **mystic** heals the ship from the vitality network (the sheet's Transmute Vitality and regeneration buttons).
 - Magic conduit spells need a leveled spell. Cantrips (e.g. Cosmic Cannon) aren't allowed, and the sheet expends the real slot it uses.
 - Playtest changes come one at a time: fix, test on the test page, hold, and release only when told "Release now".
 
