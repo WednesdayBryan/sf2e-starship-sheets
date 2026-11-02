@@ -9,7 +9,7 @@ import {
 } from "./data.mjs";
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
-  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind,
+  degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, vitalityTransferCap, vitalityRegen, vitalityTransfer,
   npcWeaponOffKilter, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
@@ -63,6 +63,12 @@ function solarStrikes(actor) {
   return { weapon: find("solar-weapon", /solar weapon/i), flare: find("solar-flare", /solar flare/i) };
 }
 
+/** A Strike's weapon traits (after the system's trait alterations, e.g. the solar weapon's chosen traits). */
+function strikeTraits(strike) {
+  const item = strike?.item;
+  return [...(item?.traits ?? []), ...(item?.system?.traits?.value ?? [])].map(String);
+}
+
 /** Number of weapon damage dice, including a striking crystal. */
 function strikeDice(strike) {
   const system = strike?.item?.system;
@@ -75,13 +81,15 @@ function strikeDice(strike) {
  */
 async function rollNovaWeaponDamage(info, strike, { event, critical, speaker }) {
   const method = critical ? strike.critical : strike.damage;
+  // Without reach, the nova weapon deals the solar weapon's own damage, so the system rolls it as is.
+  if (!info.solarWeapon?.reach) return method?.call(strike, { event });
   let formula = null;
   try {
     formula = await method?.call(strike, { event, getFormula: true });
   } catch (err) {
     console.warn(`${MODULE_ID} | Couldn't read the solar weapon's damage formula`, err);
   }
-  const flavor = `<strong>Nova weapon</strong> (${esc(strike.label ?? "solar weapon")}) ${critical ? "critical " : ""}damage, d10 dice`;
+  const flavor = `<strong>Nova weapon</strong> (${esc(strike.label ?? "solar weapon")}) ${critical ? "critical " : ""}damage — d10 dice (solar weapon has reach)`;
   const DamageRoll = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll");
   if (typeof formula === "string" && DamageRoll) {
     const novaFormula = formula.replace(/(\d+)d(?:4|6|8|10|12)\b/, "$1d10");
@@ -114,11 +122,15 @@ function crewInfo(uuid) {
           label: weapon.label ?? weapon.item?.name ?? "Solar Weapon",
           variants: (weapon.variants ?? []).map((v) => v.label),
           attack: weapon.totalModifier,
+          agile: strikeTraits(weapon).includes("agile"),
+          // A solar weapon with reach gives the nova weapon a d10 die instead (and the nova weapon loses reach).
+          reach: strikeTraits(weapon).includes("reach"),
+          die: weaponItem?.damage?.die ?? "d8",
           dice: strikeDice(weapon),
           type: weaponItem?.damage?.damageType ?? "bludgeoning"
         }
       : null,
-    solarFlare: solar.flare ? { attack: solar.flare.strike.totalModifier } : null,
+    solarFlare: solar.flare ? { attack: solar.flare.strike.totalModifier, dice: strikeDice(solar.flare.strike) } : null,
     pilotDC: a.skills?.piloting?.dc?.value ?? null,
     dex: a.system?.abilities?.dex?.mod ?? 0,
     level: a.level ?? 0,
@@ -129,9 +141,21 @@ function crewInfo(uuid) {
       .map(([slug, p]) => ({ slug, label: p.label ?? slug, rank: Number(p.rank), definition: JSON.parse(JSON.stringify(p.definition)) })),
     specialization: weaponSpecialization(a),
     aim: aimInfo(a),
+    vitality: vitalityInfo(a),
     classDC: a.classDC?.dc?.value ?? a.system?.attributes?.classDC?.value ?? null,
     primaryTarget: (a.itemTypes?.feat ?? []).some((f) => (f.slug ?? f.system?.slug) === "primary-target")
   };
+}
+
+/**
+ * A mystic's vitality network (the system's "vitality-network" special resource): current and maximum Hit Points,
+ * how much one Transfer Vitality can move, and how much it regains at the start of each turn.
+ */
+function vitalityInfo(actor) {
+  const pool = actor?.getResource?.("vitality-network");
+  if (!pool || !Number.isFinite(Number(pool.max)) || Number(pool.max) <= 0) return null;
+  const spellRank = Math.max(0, ...(actor.itemTypes?.spellcastingEntry ?? []).map((e) => Number(e.statistic?.rank ?? e.system?.proficiency?.value) || 0));
+  return { value: Number(pool.value) || 0, max: Number(pool.max), cap: vitalityTransferCap(actor.level ?? 1), regen: vitalityRegen(spellRank) };
 }
 
 /** "greater", "normal" or null, from the character's Weapon Specialization class features. */
@@ -159,7 +183,9 @@ function aimHitsTarget(actor) {
   const marks = actor?.synthetics?.tokenMarks;
   const target = [...game.user.targets][0];
   if (!marks || !target) return true;
-  return marks.get(target.document?.uuid) === "aim";
+  // The system keeps a list of mark slugs per marked token (e.g. ["aim"]).
+  const mark = marks.get(target.document?.uuid);
+  return Array.isArray(mark) ? mark.includes("aim") : mark === "aim";
 }
 
 function crewMap(ship) {
@@ -499,6 +525,60 @@ export async function changeHeading(actor) {
   return `Heading is now ${heading}° (${facing})${offKilter.length || wasModuleOffKilter ? "; the starship is no longer off-kilter" : ""}.`;
 }
 
+/* ---------------------------------- spell slots ---------------------------------- */
+
+/** A caster's slot-based spellcasting entries in the plain form `availableSlots` expects. */
+function slotSources(actor) {
+  return (actor?.itemTypes?.spellcastingEntry ?? [])
+    .filter((e) => e.isPrepared || e.isSpontaneous)
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      mode: e.isFlexible ? "flexible" : e.isPrepared ? "prepared" : "spontaneous",
+      slots: Object.fromEntries(
+        Array.from({ length: 10 }, (_, i) => i + 1).map((rank) => {
+          const s = e.system?.slots?.[`slot${rank}`];
+          const prepared = (s?.prepared ?? []).map((p) => ({ id: p?.id ?? null, expended: !!p?.expended, name: p?.id ? actor.items?.get(p.id)?.name ?? "" : "" }));
+          return [rank, s ? { value: Number(s.value) || 0, max: Number(s.max) || 0, prepared } : null];
+        })
+      )
+    }));
+}
+
+/** Mark a spell slot as used on the caster's sheet: a prepared spell becomes expended, or one slot is spent. */
+async function expendSlot(actor, slot) {
+  const entry = actor.items?.get(slot.entryId);
+  if (!entry) return false;
+  if (slot.index >= 0) return !!(await entry.setSlotExpendedState(slot.rank, slot.index, true));
+  const value = Number(entry.system?.slots?.[`slot${slot.rank}`]?.value) || 0;
+  if (value <= 0) return false;
+  await entry.update({ [`system.slots.slot${slot.rank}.value`]: value - 1 });
+  return true;
+}
+
+/** Choose which spell slot to expend (and, for Cosmic Bombardment, the actions spent). */
+async function castDialog(title, options, withActions) {
+  const content = `<div class="form-group"><label>Spell slot to expend</label>
+      <select name="slot">${options.map((o) => `<option value="${esc(o.key)}">${esc(o.label)}</option>`).join("")}</select></div>
+    ${withActions ? `<div class="form-group"><label>Actions spent (1–3)</label><input type="number" name="actions" value="3" min="1" max="3"></div>` : ""}
+    <p class="hint">The spell is cast at the slot's rank, and the slot is marked as used on the character sheet.</p>`;
+  const result = await DialogV2.wait({
+    window: { title },
+    content,
+    buttons: [{
+      action: "cast",
+      label: "Cast",
+      default: true,
+      callback: (event, button) => {
+        const f = button.form.elements;
+        return { slot: options.find((o) => o.key === f.slot.value), actions: withActions ? Number(f.actions.value) || 1 : 1 };
+      }
+    }],
+    rejectClose: false
+  }).catch(() => null);
+  return result && typeof result === "object" && result.slot ? result : null;
+}
+
 /* ---------------------------------- dialogs ---------------------------------- */
 
 async function numberDialog(title, fields, okLabel = "Apply") {
@@ -716,6 +796,8 @@ export class PCStarshipSheet extends StarshipSheetBase {
       rollSave: PCStarshipSheet.#onRollSave,
       postAction: PCStarshipSheet.#onPostAction,
       rollActionCheck: PCStarshipSheet.#onRollActionCheck,
+      transmuteVitality: PCStarshipSheet.#onTransmuteVitality,
+      vitalityRegen: PCStarshipSheet.#onVitalityRegen,
       areaFire: PCStarshipSheet.#onAreaFire,
       areaDamage: PCStarshipSheet.#onAreaDamage,
       primaryTarget: PCStarshipSheet.#onPrimaryTarget,
@@ -886,20 +968,25 @@ export class PCStarshipSheet extends StarshipSheetBase {
     });
   }
 
-  /** Cosmic Bombardment, Cosmic Fortification or Cosmic Repairs at a chosen rank. */
+  /**
+   * Cosmic Bombardment, Cosmic Fortification or Cosmic Repairs: the caster expends one of their own leveled spell
+   * slots (rank 1+), which is marked as used on their character sheet, and the spell is cast at that slot's rank.
+   */
   static async #onCastSpell(event, target) {
     const { st } = this.#station(target);
     const actor = this.#roller(st);
     if (!actor) return;
     const id = Number(target.dataset.spell);
     const name = ACTIONS[id].name;
-    const fields = [{ name: "rank", label: "Spell rank", value: cantripRank(actor.level ?? 1) }];
-    if (id === 503) fields.push({ name: "actions", label: "Actions spent (1–3)", value: 3 });
-    const input = await numberDialog(`${name}: ${actor.name}`, fields, "Cast");
+    const options = availableSlots(slotSources(actor));
+    if (!options.length) return ui.notifications.warn(`${actor.name} has no unused spell slots of rank 1 or higher.`);
+    const input = await castDialog(`${name}: ${actor.name}`, options, id === 503);
     if (!input) return;
+    if (!(await expendSlot(actor, input.slot))) return ui.notifications.warn(`Couldn't expend that spell slot on ${actor.name}'s sheet.`);
+    input.rank = input.slot.rank;
     const spell = cosmicSpell(id, input.rank, input.actions);
     const speaker = ChatMessage.getSpeaker({ actor });
-    const slot = `Expend a rank ${Math.max(1, input.rank)} spell slot.`;
+    const slot = `Expended a rank ${input.rank} slot (${esc(input.slot.label.replace(/^Rank \d+ — /, ""))}).`;
 
     if (id === 503) {
       return rollDamage({
@@ -947,10 +1034,19 @@ export class PCStarshipSheet extends StarshipSheetBase {
   static async #onNovaStrike(event, target) {
     const s = this.#solarian(target, "weapon");
     if (!s) return;
-    const strike = s.strikes.weapon.strike;
-    const mi = target.dataset.surge === "1" ? 0 : Number(target.dataset.map) || 0;
-    const roll = await strike.variants?.[mi]?.roll({ event, modifiers: behindModifiers(this.document) });
-    const degree = roll?.degreeOfSuccess ?? roll?.options?.degreeOfSuccess ?? null;
+    // Rolled by the sheet (not the system's Strike card), so the only damage button is the sheet's nova damage,
+    // and the target's Evade and attacks from behind count.
+    const w = s.info.solarWeapon;
+    const surge = target.dataset.surge === "1";
+    const mi = surge ? 0 : Number(target.dataset.map) || 0;
+    const penalty = (w.agile ? [0, -4, -8] : [0, -5, -10])[mi];
+    const { degree } = await rollCheck({
+      label: `${surge ? "Nova Surge" : "Nova Strike"}: ${w.label}${mi ? ` (MAP ${penalty})` : ""}`,
+      mod: w.attack + penalty,
+      speaker: s.speaker,
+      dc: targetAC(this.document),
+      extra: `<div class="sss-hint">Roll damage with the starship sheet's nova damage button${w.reach ? " (d10 dice)" : ""}.</div>`
+    });
     await applyEffectsToTarget(novaEffects("weapon", s.info.attunement, Number.isFinite(degree) ? degree : -1));
   }
 
@@ -980,8 +1076,17 @@ export class PCStarshipSheet extends StarshipSheetBase {
     const s = this.#solarian(target, "flare");
     if (!s) return;
     const critical = target.dataset.critical === "1";
+    // The nova flare has as many dice as the solar flare; take them from the system's own flare formula when it can say.
+    let dice = s.info.solarFlare.dice;
+    try {
+      const formula = await s.strikes.flare?.strike.damage?.({ getFormula: true });
+      const match = typeof formula === "string" && formula.match(/(\d+)d\d+/);
+      if (match) dice = Number(match[1]);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Couldn't read the solar flare's damage formula`, err);
+    }
     await rollDamage({
-      parts: novaBlastDamage(s.info.attunement, s.info.str).parts,
+      parts: novaBlastDamage(s.info.attunement, s.info.str, dice).parts,
       critical,
       speaker: s.speaker,
       flavor: `<strong>Nova Blast</strong> (${s.info.attunement}) ${critical ? "critical " : ""}damage`
@@ -1078,6 +1183,49 @@ export class PCStarshipSheet extends StarshipSheetBase {
       critical,
       speaker: this.#speaker(st),
       flavor: `<strong>${esc(w.name)}</strong> ${critical ? "critical " : ""}damage${notes.length ? ` (${notes.join(", ")})` : ""}`
+    });
+  }
+
+  /**
+   * Transmute Vitality: move Hit Points from the mystic's vitality network into the starship's Hull Points,
+   * up to the Transfer Vitality limit for their level.
+   */
+  static async #onTransmuteVitality(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    const v = actor ? vitalityInfo(actor) : null;
+    if (!v) return actor && ui.notifications.warn(`${actor.name} has no vitality network.`);
+    if (st?.malfunctioning) return ui.notifications.warn("The magic conduit is malfunctioning.");
+    const { ship, spMax, state } = damageState(this.document);
+    const most = vitalityTransfer({ cap: v.cap, network: v.value, hp: state.hp, hpMax: state.hpMax });
+    if (!most) return ui.notifications.info(v.value ? `${this.document.name} has no Hull Points to restore.` : `${actor.name}'s vitality network is empty.`);
+    const input = await numberDialog(`Transmute Vitality: ${actor.name}`, [{ name: "amount", label: `Hull Points to transfer (up to ${most})`, value: most }], "Transfer");
+    if (!input) return;
+    const amount = vitalityTransfer({ requested: input.amount, cap: v.cap, network: v.value, hp: state.hp, hpMax: state.hpMax });
+    if (!amount) return;
+    await actor.updateResource("vitality-network", v.value - amount);
+    const result = applyHullRepair(state, amount);
+    await writeState(this.document, ship, result);
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      content: `<div class="sss-chat"><header><strong>Transmute Vitality</strong> ${costGlyph(1)}</header>
+        <p>${esc(actor.name)} transfers <strong>${amount} HP</strong> from their vitality network into ${esc(this.document.name)}'s hull
+          (network ${v.value} → ${v.value - amount} / ${v.max}).</p>
+        <p>${esc(result.notes.join(" "))}</p></div>`
+    });
+  }
+
+  /** Start of the mystic's turn: the vitality network regains 4, 6 or 8 Hit Points, up to its maximum. */
+  static async #onVitalityRegen(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    const v = actor ? vitalityInfo(actor) : null;
+    if (!v) return;
+    const next = Math.min(v.max, v.value + v.regen);
+    await actor.updateResource("vitality-network", next);
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      content: `<div class="sss-chat"><strong>Vitality network</strong> regains ${next - v.value} HP (${v.value} → ${next} / ${v.max}).</div>`
     });
   }
 

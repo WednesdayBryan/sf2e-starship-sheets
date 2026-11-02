@@ -40,16 +40,16 @@ Give your players **Owner** permission on the player starship so they can use it
   - Actions where the enemy saves instead (Target Lock, Ram, Pull Starship and so on) have a DC button. It posts the helmer's DC for the enemy's save.
   - Jump Start only appears at the generator, magic conduit and scanners, using the skill for that station.
 - **Magic conduit spells.** The helmer casts with their own spellcasting, choosing their best spell attack modifier.
-  - **Cosmic Cannon** has spell attack buttons with the multiple attack penalty. Target the enemy starship and the roll shows the result against its AC. Damage and Crit buttons use the cantrip's automatic heightening (half the caster's level, rounded up).
-  - **Cosmic Bombardment** asks for a rank and the actions spent, then rolls its automatic-hit missiles.
-  - **Cosmic Fortification** and **Cosmic Repairs** ask for a rank, roll, and restore Shield Points or Hull Points. They affect the targeted starship if you own it; otherwise they affect this one.
-  - Chat reminds the caster which rank of spell slot to expend.
+  - **Cosmic Cannon** is a cantrip: it's free, with spell attack buttons including the multiple attack penalty. Target the enemy starship and the roll shows the result against its AC. Damage and Crit buttons use the cantrip's automatic heightening (half the caster's level, rounded up).
+  - **Cosmic Bombardment**, **Cosmic Fortification** and **Cosmic Repairs** expend one of the caster's own spell slots of rank 1 or higher. **Cast** lists only the caster's unused slots; the spell is cast at the chosen slot's rank, and the slot is marked as used on the character sheet. A prepared caster gives up one of their prepared spells of that rank, and a spontaneous or flexible caster uses one of that rank's slots. With no slots left, the spell isn't cast.
+  - Bombardment also asks for the actions spent, then rolls its automatic-hit missiles. Fortification and Repairs restore Shield Points or Hull Points to the targeted starship if you own it; otherwise they affect this one.
+  - **Transmute Vitality** (Mystic Magic Module) shows the mystic helmer's vitality network (current and maximum, read from their sheet). **Heal ship** moves Hit Points from the network into the starship's Hull Points, up to the Transfer Vitality limit for their level (10, +10 at 5th, 10th, 15th and 20th). **Regain** adds the network's start-of-turn regain (+4, or +6 at master spell DC, +8 at legendary).
 - **Starship Weapon Crystal (solarian).** The gunnery's helmer uses their own solar armaments. Graviton or photon comes from the stellar attunement on their character sheet.
   - **Nova Weapon** shows the helmer's attunement and what it adds.
-  - **Nova Strike** rolls the solar weapon Strike from the solarian's own sheet, such as "Advanced Solar Weapon (Photon)", with its attack buttons. Damage is that Strike's own damage (crystals, Strength and photon fire included) with its weapon dice changed to d10s, for example 2d10 instead of 2d8.
-  - **Nova Surge** rolls the same Strike's first attack only, with no multiple attack penalty, and the same d10 damage.
+  - **Nova Strike** uses the attack bonus of the solar weapon Strike on the solarian's own sheet, such as "Advanced Solar Weapon (Photon)". The sheet rolls it, so the attack card has no system damage buttons, and the target's Evade, Off-Guard and attacks from behind count. Roll damage with the sheet's damage button: that Strike's own damage (crystals, Strength and photon fire included). If the solar weapon has reach, the nova weapon uses d10 dice instead, for example 2d10 instead of 2d8.
+  - **Nova Surge** rolls the same attack once, with no multiple attack penalty, and the same damage.
   - A graviton Nova Strike or Surge hit gives the target −1 zone Speed until the end of its next turn.
-  - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Damage is graviton 1d8 bludgeoning (range 2 zones) or photon 1d6 fire (range 4 zones), plus Strength.
+  - **Nova Blast** uses the solar flare's attack bonus against the targeted starship's AC. Damage is graviton d8 bludgeoning (range 2 zones) or photon d6 fire (range 4 zones), plus Strength, with as many dice as the solar flare has (striking crystals add dice), for example 2d6+4 fire.
   - On a Nova Blast critical hit, a graviton blast makes the target off-kilter with −1 zone Speed, and a photon blast gives it 1d6 persistent fire.
 - **Starship effects.** Effects from these attacks appear on the target starship's sheet:
   - Speed shows the reduced value.

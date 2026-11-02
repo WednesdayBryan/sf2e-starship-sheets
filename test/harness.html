@@ -42,9 +42,9 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
   gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", classDC: 21, ranks: { simple: 2, martial: 1, advanced: 0 },
-    solarWeapon: { label: "Advanced Solar Weapon (Photon)", variants: ["+14", "+9", "+4"], attack: 14, dice: 2, type: "slashing" }, solarFlare: { attack: 12 } },
+    solarWeapon: { label: "Advanced Solar Weapon (Photon)", variants: ["+14", "+9", "+4"], attack: 14, agile: false, reach: true, die: "d8", dice: 2, type: "slashing" }, solarFlare: { attack: 12, dice: 2 } },
   scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
-  mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, ranks: { simple: 1, martial: 0, advanced: 0 } }
+  mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, vitality: { value: 18, max: 30, cap: 20, regen: 4 }, ranks: { simple: 1, martial: 0, advanced: 0 } }
 };
 
 // NPC starship weapons vs Tech Core stat blocks
@@ -319,11 +319,12 @@ try {
   check("Nova Strike names the solar weapon and uses d10 damage", [row("Nova Strike").textContent.includes("Advanced Solar Weapon (Photon)"), row("Nova Strike").querySelector('[data-action="novaDamage"]').textContent.trim()], [true, "Damage 2d10"]);
   check("Nova Surge: one attack, same damage", [[...row("Nova Surge").querySelectorAll('[data-action="novaStrike"]')].map((b) => b.textContent.trim()), row("Nova Surge").querySelector('[data-action="novaDamage"]').textContent.trim()], [["+14"], "Damage 2d10"]);
   check("Nova Blast buttons and photon damage", [[...row("Nova Blast").querySelectorAll('[data-action="novaBlast"]')].map((b) => b.textContent.trim()), row("Nova Blast").querySelector('[data-action="novaBlastDamage"]').textContent.trim()],
-    [["+12", "+7", "+2"], "1d6+4 fire"]);
+    [["+12", "+7", "+2"], "2d6+4 fire"]);
 
   // Rolling with a graviton solarian against an owned target starship
   const L = await import("../sf2e-starship-sheets/scripts/logic.mjs");
   check("Graviton blast damage", L.partsLabel(L.novaBlastDamage("graviton", 4).parts), "1d8+4 bludgeoning");
+  check("Nova Blast uses the solar flare's dice (2 with a striking crystal)", [L.partsLabel(L.novaBlastDamage("photon", 4, 2).parts), L.partsLabel(L.novaBlastDamage("graviton", 4, 3).parts)], ["2d6+4 fire", "3d8+4 bludgeoning"]);
   check("Graviton weapon damage has no fire", L.partsLabel(L.novaWeaponDamage({ dice: 2, type: "slashing" }, 4, 6, "graviton")), "2d10+4 slashing");
   let nextDie = 15;
   globalThis.Roll = class { constructor(f, d) { this.formula = f; this.data = d; } async evaluate() { this.dice = [{ total: nextDie }]; this.total = nextDie + (this.data?.mod ?? 0); return this; } async toMessage(m) { strikeLog.push(m.flavor); } };
@@ -336,10 +337,11 @@ try {
   const solarian = { name: "Grix", uuid: "gunner", level: 6, getRollOptions: () => ["stellar-attunement:graviton"], system: { abilities: { str: { mod: 4 } }, actions: [
     { type: "strike", slug: "fist", label: "Fist", totalModifier: 10 },
     { type: "strike", slug: "advanced-solar-weapon", label: "Advanced Solar Weapon (Photon)", totalModifier: 14,
-      item: { system: { traits: { value: [] }, runes: { striking: 1 }, damage: { dice: 1, die: "d8", damageType: "slashing" } } },
+      item: { system: { traits: { value: ["reach"] }, runes: { striking: 1 }, damage: { dice: 1, die: "d8", damageType: "slashing" } } },
       variants: [0, 1, 2].map((n) => ({ label: `v${n}`, roll: async () => { strikeLog.push(`weapon v${n}`); return { degreeOfSuccess: strikeDegree }; } })),
       damage: async (p) => (p.getFormula ? "{(2d8 + 7)[slashing]}" : null), critical: async (p) => (p.getFormula ? "{(2 * (2d8 + 7))[slashing]}" : null) },
-    { type: "strike", slug: "solar-flare", label: "Solar Flare", totalModifier: 12 }
+    { type: "strike", slug: "solar-flare", label: "Solar Flare", totalModifier: 12, item: { system: { runes: { striking: 1 }, damage: { dice: 1, die: "d8" } } },
+      damage: async (p) => (p.getFormula ? "{(2d8)[bludgeoning]}" : null) }
   ] } };
   const targetUpdates = [];
   const targetShip = { type: "npc", name: "Raider", uuid: "raider", isOwner: true, attributes: { ac: { value: 20 } }, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", effects: [] } } },
@@ -348,11 +350,24 @@ try {
   globalThis.fromUuidSync = (uuid) => (uuid === "gunner" ? solarian : uuid === "mystic" ? mystic : null);
   globalThis.foundry.utils.randomID = () => "id1";
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Strike").querySelectorAll('[data-action="novaStrike"]')[1]);
-  check("Nova Strike rolls the solar weapon Strike's 2nd attack", strikeLog[0], "weapon v1");
+  check("Nova Strike: the sheet rolls the solar weapon's bonus with MAP -5 (no system Strike card)", [strikeLog[0]?.includes("Nova Strike: Advanced Solar Weapon (Photon) (MAP -5)"), strikeLog[0]?.includes("(d10 dice)")], [true, true]);
   check("Graviton hit slows the target", targetUpdates[0]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => e.speed), [-1]);
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"]'));
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"][data-critical]'));
-  check("Nova damage is the Strike's own formula with d10 dice", damageFormulas, ["{(2d10 + 7)[slashing]}", "{(2 * (2d10 + 7))[slashing]}"]);
+  check("Reach solar weapon: nova damage is the Strike's own formula with d10 dice", damageFormulas, ["{(2d10 + 7)[slashing]}", "{(2 * (2d10 + 7))[slashing]}"]);
+  // Without reach the nova weapon keeps the solar weapon's die: the system rolls its normal damage.
+  const sw = solarian.system.actions[1];
+  const normalCalls = [];
+  const savedDamage = sw.damage;
+  sw.item.system.traits.value = [];
+  sw.damage = async (p) => (normalCalls.push(p), null);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaDamage.call(sheet, {}, row("Nova Strike").querySelector('[data-action="novaDamage"]'));
+  check("No reach: the solar weapon's own damage (no d10 change)", [normalCalls.length, !!normalCalls[0]?.getFormula], [1, false]);
+  sw.item.system.traits.value = ["reach"];
+  sw.damage = savedDamage;
+  damageFormulas.length = 0;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlastDamage.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlastDamage"]'));
+  check("Nova Blast rolls the solar flare's 2 dice + Strength (graviton)", damageFormulas[0], "{(2d8+4)[bludgeoning]}");
 
   // Effugy (operative) helming the second gunnery
   const effShip = structuredClone(ship);
@@ -361,7 +376,7 @@ try {
     system: { abilities: { dex: { mod: 4 }, str: { mod: 0 } }, proficiencies: { attacks: { simple: { rank: 1 }, martial: { rank: 1 }, advanced: { rank: 0 },
       "martial-simple-guns": { rank: 3, definition: GUNS }, "advanced-guns": { rank: 2, definition: ADV_GUNS } } } },
     itemTypes: { feat: [{ slug: "weapon-specialization" }], effect: [{ slug: "effect-aim" }] },
-    flags: { system: { operative: { aim: { diceNumber: 2, dieSize: 4 } } } }, synthetics: { tokenMarks: new Map([["Scene.s.Token.raider", "aim"]]) } };
+    flags: { system: { operative: { aim: { diceNumber: 2, dieSize: 4 } } } }, synthetics: { tokenMarks: new Map([["Scene.s.Token.raider", ["aim"]]]) } }; // the system stores a list of marks per token
   globalThis.fromUuidSync = (uuid) => (uuid === "effugy" ? effugy : uuid === "gunner" ? solarian : uuid === "mystic" ? mystic : null);
   const effSheet = new main.PCStarshipSheet();
   effSheet.document = { ...shipActor, flags: { "sf2e-starship-sheets": { ship: effShip } } };
@@ -382,10 +397,11 @@ try {
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
   check("Attacks on an evading NPC ship use its raised AC (20 + 2)", strikeLog.at(-1).includes("AC 22"), true);
   strikeDegree = 1;
+  nextDie = 2;
   targetUpdates.length = 0;
   strikeLog.length = 0;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaStrike.call(sheet, {}, row("Nova Surge").querySelector('[data-action="novaStrike"]'));
-  check("Nova Surge rolls the first attack (no MAP); a miss applies nothing", [strikeLog[0], targetUpdates.length], ["weapon v0", 0]);
+  check("Nova Surge: one attack, no MAP; a miss applies nothing", [strikeLog[0]?.includes("Nova Surge: Advanced Solar Weapon (Photon)"), strikeLog[0]?.includes("MAP"), targetUpdates.length], [true, false, 0]);
   // NPC default and generator actions
   const npcUpdates = [];
   globalThis.ChatMessage.create = async () => {};
@@ -503,6 +519,61 @@ try {
   attackerX = 700;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.strike.call(effSheet, {}, { dataset: { station: "5", weapon: "0", map: "0" } });
   check("Already off-guard: no extra -2 from behind", strikeLog.at(-1).includes("(AC 20)"), true);
+
+  // Magic conduit: leveled starship spells expend one of the caster's own slots
+  const L3 = await import("../sf2e-starship-sheets/scripts/logic.mjs");
+  const slotSrc = [
+    { id: "p1", name: "Mystic Spells", mode: "prepared", slots: { 1: { value: 0, max: 2, prepared: [{ id: "s1", expended: false, name: "Heal" }, { id: null, expended: false }] }, 2: { value: 0, max: 1, prepared: [{ id: "s2", expended: true, name: "Fear" }] } } },
+    { id: "sp1", name: "Witchwarper Spells", mode: "spontaneous", slots: { 1: { value: 0, max: 3, prepared: [] }, 2: { value: 2, max: 3, prepared: [] } } }
+  ];
+  check("Available slots: unused rank 1+ only, highest first", L3.availableSlots(slotSrc).map((o) => o.label),
+    ["Rank 2 — Witchwarper Spells (2 of 3 left)", "Rank 1 — Mystic Spells: Heal"]);
+  const slotLog = [];
+  const caster = { name: "Vesk", uuid: "mystic", level: 6,
+    itemTypes: { spellcastingEntry: [
+      { id: "p1", name: "Mystic Spells", isPrepared: true, isSpontaneous: false, isFlexible: false, statistic: { check: { mod: 14 } },
+        system: { slots: { slot1: { value: 0, max: 1, prepared: [{ id: "s1", expended: false }] } } }, setSlotExpendedState: async (...a) => (slotLog.push(["expend", ...a]), true) },
+      { id: "sp1", name: "Witchwarper Spells", isPrepared: false, isSpontaneous: true, isFlexible: false, statistic: { check: { mod: 12 } },
+        system: { slots: { slot2: { value: 2, max: 3, prepared: [] } } }, update: async (u) => (slotLog.push(["update", u]), true) }
+    ] } };
+  caster.items = { get: (id) => (id === "s1" ? { name: "Heal" } : caster.itemTypes.spellcastingEntry.find((e) => e.id === id)) };
+  globalThis.fromUuidSync = (uuid) => (uuid === "mystic" ? caster : null);
+  let pickSlot = "sp1|2|-1";
+  globalThis.foundry.applications.api.DialogV2.wait = async ({ buttons }) => buttons[0].callback({}, { form: { elements: { slot: { value: pickSlot }, actions: { value: "3" } } } });
+  globalThis.ui = { notifications: { warn: (m) => slotLog.push(["warn", m]), info: () => {} } };
+  damageFormulas.length = 0;
+  const bombard = { dataset: { spell: "503", station: "3" } };
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.castSpell.call(sheet, {}, bombard);
+  check("Bombardment with a spontaneous rank 2 slot: slot count 2 → 1, cast at rank 2", [slotLog[0], damageFormulas[0]], [["update", { "system.slots.slot2.value": 1 }], "{(3d4+3)[force]}"]);
+  pickSlot = "p1|1|0";
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.castSpell.call(sheet, {}, bombard);
+  check("Bombardment with a prepared rank 1 spell: that prepared slot is marked expended", slotLog[1], ["expend", 1, 0, true]);
+  const noSlots = { name: "Grix", uuid: "mystic", level: 6, itemTypes: { spellcastingEntry: [] }, items: { get: () => null } };
+  globalThis.fromUuidSync = () => noSlots;
+  slotLog.length = 0;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.castSpell.call(sheet, {}, bombard);
+  check("No slots left: nothing is cast", [slotLog[0]?.[0], slotLog[0]?.[1]?.includes("no unused spell slots")], ["warn", true]);
+
+  // Mystic vitality network → Transmute Vitality heals the ship
+  const L4 = await import("../sf2e-starship-sheets/scripts/logic.mjs");
+  check("Transfer Vitality cap by level 1/5/10/20", [1, 5, 10, 20].map(L4.vitalityTransferCap), [10, 20, 30, 50]);
+  check("Network regain: trained/expert 4, master 6, legendary 8", [1, 2, 3, 4].map(L4.vitalityRegen), [4, 4, 6, 8]);
+  const vitRow = [...document.querySelectorAll("#pc .sss-conduit li.sss-action")].find((li) => li.textContent.includes("Transmute Vitality"));
+  check("Conduit shows the network and Heal ship (missing 6 HP of 72/78)", [vitRow.querySelector(".sss-trait").textContent, vitRow.querySelector('[data-action="transmuteVitality"]').textContent.trim(), vitRow.querySelector('[data-action="vitalityRegen"]').textContent.trim()],
+    ["Network 18/30", "Heal ship +6", "Regain +4"]);
+  const res = [];
+  const docUpd = [];
+  const vitActor = { name: "Vesk", uuid: "mystic", level: 6, getResource: () => ({ value: 18, max: 30 }), updateResource: async (k, v) => res.push([k, v]),
+    itemTypes: { spellcastingEntry: [{ statistic: { rank: 3, check: { mod: 14 } } }] } };
+  globalThis.fromUuidSync = (uuid) => (uuid === "mystic" ? vitActor : null);
+  const vitShip = structuredClone(ship);
+  const vitSheet = new main.PCStarshipSheet();
+  vitSheet.document = { ...shipActor, flags: { "sf2e-starship-sheets": { ship: vitShip } }, system: { attributes: { hp: { value: 60, max: 78 } } }, update: async (u) => docUpd.push(u) };
+  globalThis.foundry.applications.api.DialogV2.wait = async ({ buttons }) => buttons[0].callback({}, { form: { elements: { amount: { value: "15" } } } });
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.transmuteVitality.call(vitSheet, {}, { dataset: { station: "3" } });
+  check("Transmute Vitality 15: network 18 → 3, hull 60 → 75", [res[0], docUpd[0]?.["system.attributes.hp.value"]], [["vitality-network", 3], 75]);
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.vitalityRegen.call(vitSheet, {}, { dataset: { station: "3" } });
+  check("Regain at master spell DC: +6 (18 → 24)", res[1], ["vitality-network", 24]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

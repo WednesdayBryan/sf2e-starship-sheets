@@ -415,10 +415,14 @@ export function novaWeaponDamage(weapon, str, level, attunement) {
   return parts;
 }
 
-/** Nova Blast: graviton 1d8 bludgeoning (range 2 zones) or photon 1d6 fire (range 4 zones), plus Strength. */
-export function novaBlastDamage(attunement, str) {
+/**
+ * Nova Blast: graviton d8 bludgeoning (range 2 zones) or photon d6 fire (range 4 zones), plus Strength. The number
+ * of dice is the solar flare's, since the nova flare benefits from the solar flare's crystals (striking crystals add dice).
+ */
+export function novaBlastDamage(attunement, str, dice = 1) {
   const photon = attunement === "photon";
-  return { parts: [{ formula: withMod(photon ? "1d6" : "1d8", str), type: photon ? "fire" : "bludgeoning" }], range: photon ? 4 : 2 };
+  const n = Math.max(1, Math.trunc(dice) || 1);
+  return { parts: [{ formula: withMod(`${n}${photon ? "d6" : "d8"}`, str), type: photon ? "fire" : "bludgeoning" }], range: photon ? 4 : 2 };
 }
 
 /**
@@ -502,6 +506,44 @@ export function npcSpellAttack(level, tier = "high") {
   const row = clamp(int(level, 0), -1, 24) + 1;
   const t = SPELL_TIERS.includes(tier) ? tier : "high";
   return SPELL_ATTACK[row][SPELL_TIERS.indexOf(t)];
+}
+
+/**
+ * Spell slots a caster can expend to cast a leveled starship spell (rank 1 or higher). `sources` describe their
+ * spellcasting entries: { id, name, mode: "prepared" | "spontaneous" | "flexible",
+ * slots: { [rank]: { value, max, prepared: [{ id, expended, name }] } } }. A prepared caster gives up an
+ * unexpended prepared spell; spontaneous and flexible casters use one of the rank's remaining slots.
+ */
+export function availableSlots(sources) {
+  const out = [];
+  for (const src of sources ?? []) {
+    for (const [rankKey, slot] of Object.entries(src.slots ?? {})) {
+      const rank = Number(rankKey);
+      if (!slot || !(rank >= 1)) continue;
+      if (src.mode === "prepared") {
+        (slot.prepared ?? []).forEach((p, index) => {
+          if (p.id && !p.expended) {
+            out.push({ key: `${src.id}|${rank}|${index}`, entryId: src.id, rank, index, label: `Rank ${rank} — ${src.name}: ${p.name || "prepared spell"}` });
+          }
+        });
+      } else if (Number(slot.value) > 0) {
+        out.push({ key: `${src.id}|${rank}|-1`, entryId: src.id, rank, index: -1, label: `Rank ${rank} — ${src.name} (${slot.value} of ${slot.max} left)` });
+      }
+    }
+  }
+  return out.sort((a, b) => b.rank - a.rank);
+}
+
+/** Transfer Vitality limit: up to 10 HP, +10 at 5th, 10th, 15th and 20th level. */
+export const vitalityTransferCap = (level) => 10 * (1 + Math.floor(Math.max(1, Math.trunc(level) || 1) / 5));
+
+/** Vitality network regain at the start of each turn: 4, or 6 at master spell DC, or 8 at legendary. */
+export const vitalityRegen = (spellRank) => (spellRank >= 4 ? 8 : spellRank >= 3 ? 6 : 4);
+
+/** How much Transmute Vitality can move into the starship: limited by the cap, the network and missing Hull Points. */
+export function vitalityTransfer({ requested, cap, network, hp, hpMax }) {
+  const most = Math.max(0, Math.min(cap, network, hpMax - hp));
+  return requested === undefined || requested === null ? most : clamp(Math.trunc(requested) || 0, 0, most);
 }
 
 /** Rank a cantrip is automatically heightened to. */
