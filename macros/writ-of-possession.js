@@ -108,7 +108,8 @@ const items = [
       bonus: { value: 15 },
       damageRolls: { beam: { damage: "2d10+8", damageType: "electricity" } },
       description: { value: p("Ranged starship weapon: range increment 1 zone, ordnance. Fired from the gunnery or the generator.") },
-      range: null,
+      // Huge maximum range, no increment: ranged, without the system's foot-based range penalties on the starship map.
+      range: { increment: null, max: 10000 },
       traits: { value: ["boost-2d10", "tech", "versatile-acid"] }
     }
   },
