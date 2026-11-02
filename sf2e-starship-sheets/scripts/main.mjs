@@ -1322,6 +1322,13 @@ function itemCost(item) {
   return item.system?.actions?.value ?? 1;
 }
 
+/** A Strike's range in zones (starship range increment), from the sheet's flag; melee Strikes reach 0 zones. */
+function strikeZones(item) {
+  const zones = Number(item?.flags?.[MODULE_ID]?.zones);
+  if (Number.isFinite(zones) && zones >= 0) return zones;
+  return item?.isRanged ? null : 0;
+}
+
 function labelList(list) {
   return (list ?? []).map((x) => x.label ?? x.type ?? String(x)).join(", ");
 }
@@ -1364,8 +1371,10 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       .filter(({ s }) => s.type === "strike")
       .map(({ s, index }) => ({
         index,
+        itemId: s.item?.id ?? null,
         label: s.label ?? s.item?.name ?? "Strike",
         kind: s.item?.isRanged ? "Ranged" : "Melee",
+        zones: strikeZones(s.item),
         variants: (s.variants ?? []).map((v) => v.label),
         damage: Object.values(s.item?.system?.damageRolls ?? {}).map((r) => `${r.damage} ${r.damageType ?? ""}`.trim()).join(" + "),
         traits: (s.weaponTraits ?? s.traits ?? []).map((t) => t.label ?? t.name ?? String(t))
@@ -1430,6 +1439,11 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       return this.updateShip((s) => {
         s.weapons = [...(s.weapons ?? []), { key: el.value, ...tiers }];
       });
+    }
+    if (kind === "strikeZones") {
+      const item = this.document.items.get(el.dataset.item);
+      const zones = el.value === "" ? null : Math.max(0, Math.floor(Number(el.value) || 0));
+      return item?.update({ [`flags.${MODULE_ID}.zones`]: zones });
     }
     if (kind !== "assignStation") return;
     const item = this.document.items.get(el.dataset.item);

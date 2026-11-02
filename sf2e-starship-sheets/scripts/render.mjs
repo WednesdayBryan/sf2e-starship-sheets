@@ -611,6 +611,13 @@ function npcWeaponsBlock(vm) {
   </section>`;
 }
 
+/** A Strike's starship range, in zones. */
+export function strikeRangeText(zones) {
+  if (zones === null || zones === undefined) return "range not set (zones)";
+  if (zones === 0) return "0 zones: targets in the same zone";
+  return `range increment ${zones} zone${zones === 1 ? "" : "s"}`;
+}
+
 function npcCombat(vm) {
   const { ship, editable } = vm;
   const stations = ship.stations
@@ -630,7 +637,8 @@ function npcCombat(vm) {
     ? vm.strikes
         .map(
           (s) => `<li class="sss-weapon">
-        <div class="sss-weapon-head"><strong>${esc(s.label)}</strong> <span class="sss-dim">${esc(s.kind)}</span></div>
+        <div class="sss-weapon-head"><strong>${esc(s.label)}</strong> <span class="sss-dim">${esc(s.kind)} · ${strikeRangeText(s.zones)}</span>
+          ${editable && s.itemId ? `<label class="sss-zones" title="Range increment in zones (0 = targets in the same zone only)">Zones <input type="number" min="0" step="1" value="${s.zones ?? ""}" data-action-change="strikeZones" data-item="${esc(s.itemId)}"></label>` : ""}</div>
         <div class="sss-weapon-roll">
           ${s.variants.map((v, vi) => `<button type="button" class="sss-strike" data-action="npcStrike" data-strike="${s.index}" data-variant="${vi}">${esc(v)}</button>`).join("")}
           <button type="button" data-action="npcDamage" data-strike="${s.index}">${esc(s.damage || "Damage")}</button>

@@ -89,10 +89,12 @@ const action = (name, station, cost, traits, description, extra = {}) => ({
 // Ranged starship weapons get a huge maximum range and no range increment: the system measures range in feet,
 // so this marks them ranged without foot-based range penalties or "out of range" refusals on the starship map.
 const RANGED = { increment: null, max: 10000 };
-const strike = (name, bonus, damage, damageType, traits, description, range = null) => ({
+// `zones` is the range increment in zones (0 = targets in the same zone), shown on the NPC starship sheet.
+const strike = (name, bonus, damage, damageType, traits, description, zones, range = null) => ({
   name,
   type: "melee",
   img: "systems/sf2e/icons/default-icons/melee.svg",
+  flags: { [MODULE_ID]: { zones } },
   system: {
     action: "strike",
     bonus: { value: bonus },
@@ -105,9 +107,9 @@ const strike = (name, bonus, damage, damageType, traits, description, range = nu
 
 const items = [
   strike("Rescue Lasers", 12, "1d6+7", "slashing", ["razing", "tech"],
-    "Melee starship weapon (targets in the same zone). The converted mining lasers, used to cut wreckage away from trapped crews."),
+    "Melee starship weapon (targets in the same zone). The converted mining lasers, used to cut wreckage away from trapped crews.", 0),
   strike("Coilgun", 8, "1d6+5", "piercing", ["agile", "analog"],
-    "Ranged starship weapon: range increment 3 zones.", RANGED),
+    "Ranged starship weapon: range increment 3 zones.", 3, RANGED),
   action("Hardlight Rescue Net", "generator", 1, ["tech"],
     p("<strong>Area Fire</strong> 1-zone burst within 4 zones. Damage @Damage[1d6+7[bludgeoning]] with a @Check[reflex|dc:20|basic] save.",
       "On a failure, targets take a –2-zone status penalty to Speed for 1 round (2 rounds on a critical failure).",

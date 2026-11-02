@@ -103,6 +103,7 @@ const items = [
     name: "Overcharged Polarizing Beam",
     type: "melee",
     img: "systems/sf2e/icons/default-icons/melee.svg",
+    flags: { [MODULE_ID]: { zones: 1 } }, // range increment in zones, shown on the NPC starship sheet
     system: {
       action: "strike",
       bonus: { value: 15 },

@@ -176,8 +176,8 @@ document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window
   immunities: "starship immunities", resistances: "piercing 4", weaknesses: "",
   hp: { value: 30, max: 30 }, hpField: "system.attributes.hp.value",
   strikes: [
-    { index: 0, label: "Ramming Prow", kind: "Melee", variants: ["+9", "+4", "-1"], damage: "1d6+3 piercing", traits: ["Analog"] },
-    { index: 1, label: "Coilgun", kind: "Ranged", variants: ["+11", "+7", "+3"], damage: "1d6+3 piercing", traits: ["Agile", "Analog", "Range increment 3 zones"] }
+    { index: 0, itemId: "prow", label: "Ramming Prow", kind: "Melee", zones: 0, variants: ["+9", "+4", "-1"], damage: "1d6+3 piercing", traits: ["Analog"] },
+    { index: 1, itemId: "coil", label: "Coilgun", kind: "Ranged", zones: 3, variants: ["+11", "+7", "+3"], damage: "1d6+3 piercing", traits: ["Agile", "Analog"] }
   ],
   actions: [
     { id: "a1", name: "Ambush from Hell", cost: 2, traits: [], station: "pilot" },
@@ -211,6 +211,9 @@ eq("Generator: Fortify Shield Points +5 SP and Tractor Beam", [stationRow("gener
 eq("Gunnery: Engaged Strike", stationRow("gunnery").textContent.includes("Engaged Strike"), true);
 eq("Default actions: Repair Self (+2 HP) and Seek Starships (Perception +7)", [npcEl.querySelector('[data-action="npcRepairSelf"]').textContent.trim(), npcEl.querySelector('.sss-npc-actions [data-action="rollPerception"]').textContent.trim()],
   ["+2 HP, fix a station", "Perception +7"]);
+const strikeHeads = [...npcEl.querySelectorAll(".sss-weapon-head")].filter((h) => h.querySelector('[data-action-change="strikeZones"]'));
+eq("NPC Strikes show their range in zones, with an editable Zones box", strikeHeads.map((h) => [h.querySelector(".sss-dim").textContent, h.querySelector("input").value, h.querySelector("input").dataset.item]),
+  [["Melee · 0 zones: targets in the same zone", "0", "prow"], ["Ranged · range increment 3 zones", "3", "coil"]]);
 out[0] = failures ? `<span class="fail">${failures} FAILED</span>` : `<span class="pass">ALL PASSED</span>`;
 document.getElementById("results").innerHTML = out.join("\n");
 
@@ -590,6 +593,19 @@ try {
   check("Transmute Vitality 15: network 18 → 3, hull 60 → 75", [res[0], docUpd[0]?.["system.attributes.hp.value"]], [["vitality-network", 3], 75]);
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.vitalityRegen.call(vitSheet, {}, { dataset: { station: "3" } });
   check("Regain at master spell DC: +6 (18 → 24)", res[1], ["vitality-network", 24]);
+  // Strike ranges in zones: from the item's flag; melee defaults to 0, ranged without a flag is unset.
+  const zoneItem = (id, isRanged, zones) => ({ id, name: id, isRanged, flags: zones === undefined ? {} : { "sf2e-starship-sheets": { zones } } });
+  const zoneUpdates = [];
+  const zoneActor = { type: "npc", name: "Mercy", level: 3, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", stations: [], weapons: [] } } },
+    system: { actions: [["lasers", false, 0], ["coilgun", true, 3], ["beam", true, undefined], ["prow", false, undefined]].map(([id, r, z]) => ({ type: "strike", label: id, item: zoneItem(id, r, z), variants: [] })),
+      attributes: { hp: { value: 30, max: 30 } }, traits: { value: [] }, abilities: {} },
+    itemTypes: { action: [] }, items: { get: (id) => ({ update: async (u) => zoneUpdates.push([id, u]) }) } };
+  const zoneSheet = new main.NPCStarshipSheet();
+  zoneSheet.document = zoneActor;
+  const zoneCtx = await zoneSheet._prepareContext({});
+  check("Strike zones: lasers 0, coilgun 3, unflagged ranged unset, unflagged melee 0", zoneCtx.strikes.map((s) => [s.itemId, s.zones]), [["lasers", 0], ["coilgun", 3], ["beam", null], ["prow", 0]]);
+  await zoneSheet.onActionChange("strikeZones", { value: "2", dataset: { item: "beam" } });
+  check("Editing a Strike's Zones box saves the flag", zoneUpdates[0], ["beam", { "flags.sf2e-starship-sheets.zones": 2 }]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }
