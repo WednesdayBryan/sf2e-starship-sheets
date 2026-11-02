@@ -43,6 +43,14 @@ Last updated: November 2, 2026. Current release: **v0.13.1**.
 
 **Both sheets:** attacks against a targeted starship from behind (by its heading and the tokens' positions, outside its zone) treat it as off-guard (−2 AC); world setting "Zone width (grid squares)". A "Starship Conditions" world compendium holds the custom Off-Kilter effect, created by the GM's client.
 
+## Notes from playtests
+
+- **KaaZmesh** (solarian) uses the Starship Weapon Crystal. Nova Strike/Surge damage uses d10s only when the solar weapon has reach; otherwise it keeps the weapon's own die.
+- **Effugy** (operative) is a Striker. That specialization moves his martial gun increases to simple guns, so a martial gun such as the Chain Repeater correctly rolls at Trained, not Master. Not a bug.
+- The party's **mystic** heals the ship from the vitality network (Transmute Vitality on the Engineering station).
+- Magic conduit spells need a leveled spell. Cantrips (e.g. Cosmic Cannon) aren't allowed, and the sheet expends the real slot it uses.
+- Playtest changes come one at a time: fix, test on the test page, hold, and release only when told "Release now".
+
 ## Known limits
 
 - Juke is the only station action whose result posts condition links; other actions' conditions are applied by hand.
