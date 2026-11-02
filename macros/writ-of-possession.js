@@ -32,6 +32,11 @@ await actor.update({
   "system.attributes.ac.value": 24,
   "system.attributes.hp.max": 122,
   "system.attributes.hp.value": 122,
+  // Starship immunities (Tech Core pg. 172): starships also can never become doomed or unconscious.
+  "system.attributes.immunities": [
+    "bleed", "death-effects", "disease", "drained", "fatigued", "paralyzed", "poison",
+    "sickened", "spirit", "vitality", "void", "doomed", "unconscious"
+  ].map((type) => ({ type })),
   "system.perception.mod": 17,
   "system.saves.fortitude.value": 17,
   "system.saves.reflex.value": 13,
@@ -48,7 +53,7 @@ await actor.update({
     "Its polarizing beam and harpoon launcher are still there, but the prow now carries rotating chainsaw blades and magnetic boarding clamps, and a pressurized boarding pod rides in a launch cradle under the keel."
   ),
   "system.details.privateNotes": p(
-    `<strong>Base:</strong> <a href="${DOMINATOR}">Dread Dominator</a> (creature 8). Immunities: starship immunities.`,
+    `<strong>Base:</strong> <a href="${DOMINATOR}">Dread Dominator</a> (creature 8). Starship immunities are set as the actor's immunities; unlike most objects, it isn't immune to mental or nonlethal effects.`,
     "<strong>Boarding refit:</strong> adds Chainsaw Prow (it clings to a target of any size), Reel In and Deploy Boarders.",
     "<strong>Tactics:</strong> Raider Beam the target, Piercing Harpoon it, Reel In to close to 0 zones, then Chainsaw Prow to cling and Deploy Boarders. It tries not to destroy its prey: the goal is a prize ship.",
     "<strong>Boarding party:</strong> GM's choice. The system's Free Captain creatures fit (Starfinder Alien Core): a Free Captain (creature 6) leading Free Captain Gunners (creature 2) or Knaves (creature 1)."
