@@ -33,6 +33,23 @@ Last updated: November 2, 2026. Current release: **v0.13.2**.
 - Don't use the button action name `tab`: Foundry reserves it. The sheets use `sssTab`.
 - Rules text isn't copied in; actions, upgrades and weapons link to Archives of Nethys.
 - Damage from the system's chat buttons goes through Shield Points first (world setting "Shields absorb system damage").
+- Starship ranges are in zones, but the system measures Strike range in feet and refuses ranged attacks past maximum range. Ranged starship Strikes on NPC actors therefore get `system.range = { increment: null, max: 10000 }`: they count as ranged with no foot-based penalties. The real range in zones is stored in the item flag `flags.sf2e-starship-sheets.zones` and shown on the NPC sheet. Melee Strikes keep `range: null` (0 zones).
+- Starship immunities (Tech Core pg. 172) are set as real system immunities: bleed, death-effects, disease, drained, fatigued, paralyzed, poison, sickened, spirit, vitality, void, plus doomed and unconscious. Starships are not immune to mental or nonlethal.
+
+## NPC ships for the campaign (in `macros/`)
+
+Each macro fills in an existing NPC actor of that exact name. Run it as a GM Script macro; it can be run again safely. To copy one: `Get-Content -Raw 'macros\<file>.js' | Set-Clipboard`.
+
+- **Writ of Possession** (level 8 Free Captain ship): the [Dread Dominator](https://2e.aonsrd.com/creatures/397-dread-dominator) stat block, unchanged, plus a homebrew boarding refit:
+  - Chainsaw Prow (pilot, 1 action): 2d8+7 slashing, basic DC 23 Fortitude. It clings to a target of any size.
+  - Reel In (generator, 1 action): pulls a harpooned ship closer, DC 23 Fortitude.
+  - Deploy Boarders (free action, twice per day): a boarding pod lands a party on the target.
+  - Suggested boarders are the system's Free Captain creatures.
+- **Mercy of Tomorrow** (level 3 medical transport): the [Flint-class Mining Vessel](https://2e.aonsrd.com/creatures/444-flint-class-mining-vessel) stat block, unchanged numbers, reskinned:
+  - Rescue Lasers (melee, 0 zones) and Coilgun (3 zones).
+  - Hardlight Rescue Net (Area Fire).
+  - Triage Sensors: these also show other ships' Hull Points and injured crew.
+  - Homebrew Stabilization Beam (generator, 2 actions, once per day): an ally within 2 zones, or the ship itself, regains 2d8+5 HP.
 
 ## What's done
 
