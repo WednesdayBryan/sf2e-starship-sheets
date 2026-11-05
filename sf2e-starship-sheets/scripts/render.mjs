@@ -204,6 +204,23 @@ function hullBlock(vm) {
 
 /* ---------------------------------- PC ---------------------------------- */
 
+/** Banner showing which token attacks will be rolled against (the user's first target). */
+export function targetBanner(t) {
+  if (!t) {
+    return `<div class="sss-target is-none"><i class="fa-solid fa-crosshairs"></i>
+      <span><strong>No target.</strong> Target an enemy starship's token (hover over it and press T) before attacking.</span></div>`;
+  }
+  const notes = [];
+  if (t.behind) notes.push(`<span class="sss-target-flag">Off-guard: attacking from behind (−2 AC)</span>`);
+  if (t.self) notes.push(`<span class="sss-target-flag">This is your own starship</span>`);
+  else if (!t.starship) notes.push(`<span class="sss-target-flag">Not a starship</span>`);
+  if (t.count > 1) notes.push(`<span class="sss-hint">${t.count} tokens targeted; attacks use this one</span>`);
+  return `<div class="sss-target${t.self || !t.starship ? " is-warning" : ""}"><i class="fa-solid fa-crosshairs"></i>
+    ${t.img ? `<img src="${esc(t.img)}" alt="">` : ""}
+    <span>Target: <strong>${esc(t.name)}</strong>${t.ac !== null ? ` · AC <strong>${t.ac}</strong>` : ""}</span>
+    ${notes.join(" ")}</div>`;
+}
+
 export function renderPCSheet(vm) {
   const { ship, derived: d, editable } = vm;
   const tab = vm.tab ?? "stations";
@@ -227,6 +244,8 @@ export function renderPCSheet(vm) {
         </div>
       </div>
     </header>
+
+    ${targetBanner(vm.target)}
 
     ${d.warnings.length ? `<ul class="sss-warnings">${d.warnings.map((w) => `<li><i class="fa-solid fa-triangle-exclamation"></i> ${esc(w)}</li>`).join("")}</ul>` : ""}
 
@@ -475,6 +494,8 @@ export function renderNPCSheet(vm) {
         </div>
       </div>
     </header>
+
+    ${targetBanner(vm.target)}
 
     <div class="sss-top">
       <section class="sss-card sss-defenses">

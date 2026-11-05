@@ -18,7 +18,7 @@
 <div class="sf2e-starship-sheets frame" id="npc"><div class="window-content"></div></div>
 <script type="module">
 import { defaultPCShip, derivePCShip, applyShipDamage, applyHullRepair, hullIntegrity, generateShieldsDice, ventPowerDice, vehicleSync, cosmicSpell, cantripRank, npcWeapon, tokenFacesLeft, predicateTest, weaponRollOptions, helmerRank, specializationBonus, attackFromBehind } from "../sf2e-starship-sheets/scripts/logic.mjs";
-import { renderPCSheet, renderNPCSheet } from "../sf2e-starship-sheets/scripts/render.mjs";
+import { renderPCSheet, renderNPCSheet, targetBanner } from "../sf2e-starship-sheets/scripts/render.mjs";
 
 const out = [];
 let failures = 0;
@@ -160,7 +160,7 @@ document.getElementById("results").innerHTML = out.join("\n");
 document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
   name: "The Starfinder Skirmisher", img: "", editable: true, ship, derived: d,
   hp: { value: 72, max: 78 }, hpField: "system.attributes.hp.value",
-  crewOptions: Object.entries(crew).map(([uuid, c]) => ({ uuid, name: c.name })), tab: "stations"
+  crewOptions: Object.entries(crew).map(([uuid, c]) => ({ uuid, name: c.name })), target: { name: "Writ of Possession", img: "", ac: 23, behind: true, starship: true, self: false, count: 2 }, tab: "stations"
 });
 
 // Render an NPC sheet (Sword-class Attack Vessel)
@@ -185,6 +185,7 @@ document.querySelector("#npc .window-content").innerHTML = renderNPCSheet(window
     { id: "a3", name: "Repair Self", cost: 1, traits: [], station: "other" }
   ],
   weapons: [npcWeapon({ key: "coilgun", attackTier: "high", damageTier: "low" }, 2, 0), npcWeapon({ key: "farseeker-missiles" }, 2, 1)],
+  target: null,
   tab: "combat"
 });
 const npcEl = document.querySelector("#npc");
@@ -214,6 +215,12 @@ eq("Default actions: Repair Self (+2 HP) and Seek Starships (Perception +7)", [n
 const strikeHeads = [...npcEl.querySelectorAll(".sss-weapon-head")].filter((h) => h.querySelector('[data-action-change="strikeZones"]'));
 eq("NPC Strikes show their range in zones, with an editable Zones box", strikeHeads.map((h) => [h.querySelector(".sss-dim").textContent, h.querySelector("input").value, h.querySelector("input").dataset.item]),
   [["Melee · 0 zones: targets in the same zone", "0", "prow"], ["Ranged · range increment 3 zones", "3", "coil"]]);
+const bannerText = (sel) => document.querySelector(`${sel} .sss-target`).textContent.replace(/\s+/g, " ").trim();
+eq("PC sheet target banner: name, AC, behind, two targets", bannerText("#pc"), "Target: Writ of Possession · AC 23 Off-guard: attacking from behind (−2 AC) 2 tokens targeted; attacks use this one");
+eq("NPC sheet with no target says so", [bannerText("#npc"), document.querySelector("#npc .sss-target").classList.contains("is-none")], ["No target. Target an enemy starship's token (hover over it and press T) before attacking.", true]);
+const bannerEl = (t) => { const el = document.createElement("div"); el.innerHTML = targetBanner(t); return el.firstElementChild; };
+eq("Targeting a creature or your own ship shows a warning", [true, false].map((self) => [bannerEl({ name: "X", ac: 15, starship: self, self, count: 1 }).className, bannerEl({ name: "X", ac: 15, starship: self, self, count: 1 }).querySelector(".sss-target-flag").textContent]),
+  [["sss-target is-warning", "This is your own starship"], ["sss-target is-warning", "Not a starship"]]);
 out[0] = failures ? `<span class="fail">${failures} FAILED</span>` : `<span class="pass">ALL PASSED</span>`;
 document.getElementById("results").innerHTML = out.join("\n");
 
@@ -227,10 +234,11 @@ globalThis.foundry = {
     apps: { DocumentSheetConfig: { registerSheet: (...a) => registered.push(a[3].label) } },
     instances: new Map()
   },
-  utils: { deepClone: (o) => structuredClone(o), mergeObject: Object.assign, setProperty() {}, getProperty() {}, expandObject: (o) => o }
+  utils: { deepClone: (o) => structuredClone(o), mergeObject: Object.assign, setProperty() {}, getProperty() {}, expandObject: (o) => o, debounce: (f) => f }
 };
 const hooks = {};
-globalThis.Hooks = { once: (n, f) => (hooks[n] = f), on: () => {} };
+const onHooks = {};
+globalThis.Hooks = { once: (n, f) => (hooks[n] = f), on: (n, f) => (onHooks[n] ??= []).push(f) };
 globalThis.game = { system: { id: "sf2e" }, settings: { register() {} }, modules: new Map([["sf2e-starship-sheets", {}]]) };
 globalThis.Actor = class {};
 try {
@@ -606,6 +614,28 @@ try {
   check("Strike zones: lasers 0, coilgun 3, unflagged ranged unset, unflagged melee 0", zoneCtx.strikes.map((s) => [s.itemId, s.zones]), [["lasers", 0], ["coilgun", 3], ["beam", null], ["prow", 0]]);
   await zoneSheet.onActionChange("strikeZones", { value: "2", dataset: { item: "beam" } });
   check("Editing a Strike's Zones box saves the flag", zoneUpdates[0], ["beam", { "flags.sf2e-starship-sheets.zones": 2 }]);
+  // Target banner: the sheet's context reports the first targeted token and its AC.
+  const writ = { type: "npc", name: "Writ of Possession", img: "writ.webp", attributes: { ac: { value: 24 } }, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", acCircumstance: 1 } } }, hasCondition: () => false };
+  globalThis.game.user.targets = new Set([{ name: "Writ of Possession", actor: writ }]);
+  check("Sheet context: target is the Writ, AC 24 + Evade 1 = 25", (({ name, ac, starship, self, count }) => ({ name, ac, starship, self, count }))((await zoneSheet._prepareContext({})).target),
+    { name: "Writ of Possession", ac: 25, starship: true, self: false, count: 1 });
+  globalThis.game.user.targets = new Set();
+  check("Sheet context: no target", (await zoneSheet._prepareContext({})).target, null);
+  // Targeting, moving tokens and changing the targeted actor redraw open starship sheets.
+  const redraws = [];
+  const openSheet = Object.assign(new main.NPCStarshipSheet(), { rendered: true, render: () => redraws.push("npc") });
+  const closedSheet = Object.assign(new main.PCStarshipSheet(), { rendered: false, render: () => redraws.push("closed") });
+  globalThis.foundry.applications.instances = new Map([["a", openSheet], ["b", closedSheet], ["c", { rendered: true, render: () => redraws.push("other app") }]]);
+  onHooks.targetToken.forEach((f) => f({ id: "someone-else" }, {}, true));
+  onHooks.targetToken.forEach((f) => f(globalThis.game.user, {}, true));
+  check("Targeting a token redraws open starship sheets only (not for another user's targets)", redraws, ["npc"]);
+  globalThis.game.user.targets = new Set([{ name: "Writ of Possession", actor: writ }]);
+  onHooks.updateToken.forEach((f) => f({}, { x: 300 }));
+  onHooks.updateToken.forEach((f) => f({}, { name: "renamed" }));
+  onHooks.updateActor.forEach((f) => f(writ, {}));
+  onHooks.createItem.forEach((f) => f({ parent: writ }));
+  onHooks.createItem.forEach((f) => f({ parent: { type: "character" } }));
+  check("Token moves, target changes and conditions on the target redraw; renames and others don't", redraws.length, 4);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

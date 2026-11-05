@@ -424,6 +424,23 @@ function targetAC(attacker = null) {
   return { name: target.name, ac: behind ? ac - 2 : ac, behind };
 }
 
+/** What a starship sheet shows about the user's target: the first targeted token, which attacks are rolled against. */
+function targetInfo(attacker) {
+  const tokens = [...(game.user?.targets ?? [])];
+  if (!tokens.length) return null;
+  const actor = tokens[0].actor;
+  const t = targetAC(attacker);
+  return {
+    name: tokens[0].name ?? actor?.name ?? "Unknown",
+    img: actor?.img ?? "",
+    ac: t?.ac ?? null,
+    behind: !!t?.behind,
+    starship: !!actor && isStarship(actor),
+    self: !!actor && actor === attacker,
+    count: tokens.length
+  };
+}
+
 /** For attacks the system rolls itself: +2 to the attack instead of -2 to the AC when attacking from behind. */
 function behindModifiers(attacker) {
   const target = [...game.user.targets][0]?.actor;
@@ -835,6 +852,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       hp: { value: actor.system.attributes.hp.value, max: derived.hpMax },
       hpField: "system.attributes.hp.value",
       crewOptions,
+      target: targetInfo(actor),
       tab: this._tab ?? "stations"
     };
   }
@@ -1418,6 +1436,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       actions,
       weapons: (ship.weapons ?? []).map((w, i) => npcWeapon(w, actor.level, i)).map((w) => (hasOffKilter(actor) ? npcWeaponOffKilter(w) : w)),
       offKilter: hasOffKilter(actor),
+      target: targetInfo(actor),
       tab: this._tab ?? "combat"
     };
   }
@@ -1830,6 +1849,28 @@ Hooks.once("init", () => {
   Hooks.on("updateActor", refreshCrew);
   // Effects such as Aim, and feats, are items on the crew member.
   for (const hook of ["createItem", "updateItem", "deleteItem"]) Hooks.on(hook, (item) => refreshCrew(item.parent));
+
+  // The target banner: redraw open starship sheets when this user's targets change, when tokens move
+  // (attacking from behind), or when the targeted actor changes (its AC).
+  const refreshTargetBanners = foundry.utils.debounce(() => {
+    for (const app of foundry.applications.instances.values()) {
+      if (app instanceof StarshipSheetBase && app.rendered) app.render();
+    }
+  }, 50);
+  Hooks.on("targetToken", (user) => {
+    if (user === game.user) refreshTargetBanners();
+  });
+  Hooks.on("updateToken", (token, changes) => {
+    if (game.user.targets.size && ("x" in changes || "y" in changes)) refreshTargetBanners();
+  });
+  const targeted = (actor) => !!actor && [...game.user.targets].some((t) => t.actor === actor);
+  Hooks.on("updateActor", (actor) => {
+    if (targeted(actor)) refreshTargetBanners();
+  });
+  // Conditions such as off-guard are items on the target.
+  for (const hook of ["createItem", "deleteItem"]) Hooks.on(hook, (item) => {
+    if (targeted(item.parent)) refreshTargetBanners();
+  });
 
   // Players can't update starships they don't own; the active GM applies effects for them.
   Hooks.once("ready", () => {
