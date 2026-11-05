@@ -11,7 +11,7 @@ import {
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, bayCount, vitalityTransferCap, vitalityRegen, vitalityTransfer,
-  npcWeaponOffKilter, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
+  npcWeaponOffKilter, conditionPenalty, npcWeaponConditions, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -223,6 +223,19 @@ const OFF_KILTER = {
     traits: { value: [] }
   }
 };
+
+/** An actor's conditions (frightened, clumsy, ...) as [{ slug, value }] for `conditionPenalty`. */
+const actorConditions = (actor) =>
+  (actor?.itemTypes?.condition ?? []).map((c) => ({ slug: c.slug ?? c.system?.slug, value: c.value ?? c.system?.value?.value ?? 1 }));
+
+/** An NPC starship weapon at its level, with condition and off-kilter penalties. */
+function npcWeaponView(actor, entry, index) {
+  const w = npcWeaponConditions(npcWeapon(entry, actor.level, index), actorConditions(actor));
+  return hasOffKilter(actor) ? npcWeaponOffKilter(w) : w;
+}
+
+/** "Includes frightened 2 (−2)." for a chat card, when a condition changed the roll. */
+const conditionNote = (c) => (c?.penalty ? `<div>Includes ${esc(c.label)} (${c.penalty}).</div>` : "");
 
 const hasOffKilter = (actor) => (actor?.itemTypes?.effect ?? []).some((e) => (e.slug ?? e.system?.slug) === "off-kilter");
 
@@ -1496,8 +1509,10 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       hpField: "system.attributes.hp.value",
       strikes,
       actions,
-      weapons: (ship.weapons ?? []).map((w, i) => npcWeapon(w, actor.level, i)).map((w) => (hasOffKilter(actor) ? npcWeaponOffKilter(w) : w)),
+      weapons: (ship.weapons ?? []).map((w, i) => npcWeaponView(actor, w, i)),
       offKilter: hasOffKilter(actor),
+      spellCondition: conditionPenalty(actorConditions(actor), "spell"),
+      conditionPenalties: ["ranged", "melee", "spell", "dc"].map((k) => [k, conditionPenalty(actorConditions(actor), k)]).filter(([, c]) => c.penalty),
       target: targetInfo(actor),
       tab: this._tab ?? "combat"
     };
@@ -1583,11 +1598,13 @@ export class NPCStarshipSheet extends StarshipSheetBase {
     this.#conduitMalfunctioning();
     const mi = Number(target.dataset.map) || 0;
     const penalty = [0, -5, -10][mi];
+    const condition = conditionPenalty(actorConditions(this.document), "spell");
     await rollCheck({
       label: `Cosmic Cannon: spell attack${mi ? ` (MAP ${penalty})` : ""}`,
-      mod: npcSpellAttack(this.document.level, this.ship.spellTier) + penalty,
+      mod: npcSpellAttack(this.document.level, this.ship.spellTier) + penalty + condition.penalty,
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
-      dc: targetAC(this.document)
+      dc: targetAC(this.document),
+      extra: conditionNote(condition)
     });
   }
 
@@ -1663,7 +1680,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
   #weapon(target) {
     const index = Number(target.dataset.weapon);
     const entry = this.ship.weapons?.[index];
-    return entry ? (hasOffKilter(this.document) ? npcWeaponOffKilter(npcWeapon(entry, this.document.level, index)) : npcWeapon(entry, this.document.level, index)) : null;
+    return entry ? npcWeaponView(this.document, entry, index) : null;
   }
 
   /** Starship weapon Strike against the targeted starship's AC. */
@@ -1680,7 +1697,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
       mod: w.attack + penalty,
       speaker: ChatMessage.getSpeaker({ actor: this.document }),
       dc: targetAC(this.document),
-      extra: `<div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}<span class="sss-trait">range ${w.range} zones</span></div>`
+      extra: `${conditionNote(w.attackCondition)}<div class="sss-traits-list">${w.traits.map((t) => `<span class="sss-trait">${esc(t)}</span>`).join("")}<span class="sss-trait">range ${w.range} zones</span></div>`
     });
   }
 
@@ -1709,6 +1726,7 @@ export class NPCStarshipSheet extends StarshipSheetBase {
         <p>Area: ${esc(auto ? `a ${w.autoFireRange}-zone cone` : w.areaShape)}. No attack roll.</p>
         <p>Each starship in the area attempts a <strong>basic Reflex save</strong> against <strong>DC ${w.saveDC}</strong>.
           On a critical failure, it suffers the weapon's critical hit effects.</p>
+        ${conditionNote(w.dcCondition)}
         <a href="${AON}${a.url}" target="_blank" rel="noopener">Read the rules on Archives of Nethys</a></div>`
     });
   }

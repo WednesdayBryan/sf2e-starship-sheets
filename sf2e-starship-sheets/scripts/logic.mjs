@@ -249,6 +249,32 @@ function applyOffKilter(stations) {
   }
 }
 
+/**
+ * Status penalty from an NPC starship's conditions on a roll the sheet makes itself (the system applies conditions
+ * to its own Strikes, saves and skills). Frightened and sickened apply to every check and DC, clumsy to ranged
+ * attacks, enfeebled to melee attacks and stupefied to spell attacks. Status penalties don't stack: the worst one
+ * applies. `conditions` is [{ slug, value }]; `kind` is "ranged", "melee", "spell" or "dc".
+ */
+export function conditionPenalty(conditions, kind) {
+  const applies = { frightened: true, sickened: true, clumsy: kind === "ranged", enfeebled: kind === "melee", stupefied: kind === "spell" };
+  let worst = null;
+  for (const c of conditions ?? []) {
+    if (!applies[c.slug]) continue;
+    const value = Math.max(0, Math.trunc(Number(c.value)) || 0);
+    if (value && (!worst || value > worst.value)) worst = { value, label: `${c.slug} ${value}` };
+  }
+  return worst ? { penalty: -worst.value, label: worst.label } : { penalty: 0, label: "" };
+}
+
+/** An NPC starship weapon with its condition penalties on the attack and on Area Fire / Auto-Fire DCs. */
+export function npcWeaponConditions(w, conditions) {
+  if (w.missing) return w;
+  const attack = conditionPenalty(conditions, w.range === 0 ? "melee" : "ranged");
+  const dc = conditionPenalty(conditions, "dc");
+  if (!attack.penalty && !dc.penalty) return w;
+  return { ...w, attack: w.attack + attack.penalty, saveDC: w.saveDC + dc.penalty, attackCondition: attack, dcCondition: dc };
+}
+
 /** The same off-kilter penalty for an NPC starship's weapon. */
 export function npcWeaponOffKilter(w) {
   if (w.missing) return w;

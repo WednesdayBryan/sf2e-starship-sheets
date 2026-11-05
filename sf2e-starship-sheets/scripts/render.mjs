@@ -576,7 +576,7 @@ function npcSpellList(vm, disabled) {
   const { ship, editable } = vm;
   const off = disabled ? " disabled" : "";
   const rank = Math.max(1, Math.ceil((vm.level ?? 1) / 2));
-  const attack = npcSpellAttack(vm.level, ship.spellTier);
+  const attack = npcSpellAttack(vm.level, ship.spellTier) + (vm.spellCondition?.penalty ?? 0);
   const tier = `<select name="ship.spellTier"${dis(editable)} title="GM Core spell attack tier">${SPELL_TIERS.map((t) => opt(t, NPC_TIER_LABELS[t], ship.spellTier ?? "high")).join("")}</select>`;
   const row = (id, buttons) => {
     const a = ACTIONS[id];
@@ -585,13 +585,22 @@ function npcSpellList(vm, disabled) {
       ${buttons}${link(a.url, "↗")}</li>`;
   };
   return `<div class="sss-npc-actions sss-npc-spells">
-    <label class="sss-section">Spell repository <span class="sss-hint">spell attack ${signed(attack)} · rank ${rank}</span> ${tier}</label>
+    <label class="sss-section">Spell repository <span class="sss-hint">spell attack ${signed(attack)} · rank ${rank}</span> ${tier}${vm.spellCondition?.penalty ? ` <span class="sss-destroyed">${esc(vm.spellCondition.label)}: −${-vm.spellCondition.penalty}</span>` : ""}</label>
     <ul class="sss-actions">
       ${row(504, `${[0, -5, -10].map((pen, mi) => `<button type="button" class="sss-strike" data-action="npcSpellAttack" data-map="${mi}"${off} title="Spell attack vs target's AC">${signed(attack + pen)}</button>`).join("")}
         <button type="button" class="sss-roll" data-action="npcSpellDamage"${off}>${1 + rank}d4 force</button>
         <button type="button" class="sss-roll" data-action="npcSpellDamage" data-critical="1"${off}>Crit</button>`)}
       ${[503, 505, 506].map((id) => row(id, `<button type="button" class="sss-roll" data-action="npcCastSpell" data-spell="${id}"${off} title="Choose a rank and roll">Cast</button>`)).join("")}
     </ul></div>`;
+}
+
+/** "frightened 2: −2 melee attacks, area DCs" for the conditions lowering the starship weapons' numbers. */
+function conditionsBadge(list) {
+  if (!list?.length) return "";
+  const names = { ranged: "ranged attacks", melee: "melee attacks", spell: "spell attacks", dc: "area DCs" };
+  const byLabel = new Map();
+  for (const [kind, c] of list) byLabel.set(`${c.label}: ${c.penalty}`, [...(byLabel.get(`${c.label}: ${c.penalty}`) ?? []), names[kind]]);
+  return [...byLabel].map(([label, kinds]) => ` <span class="sss-destroyed">${esc(label.replace(/: -/, ": −"))} ${esc(kinds.join(", "))}</span>`).join("");
 }
 
 /** Starship weapons on an NPC starship, with attack and damage from its level. */
@@ -625,7 +634,7 @@ function npcWeaponsBlock(vm) {
     })
     .join("");
   return `<section class="sss-card">
-    <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}${vm.offKilter ? ` <span class="sss-destroyed">off-kilter: −2 attacks and area DCs</span>` : ""}</label>
+    <label class="sss-section">Starship Weapons <span class="sss-hint">(gunnery; attack and damage from level ${vm.level} using GM Core's creature tables)</span>${malf ? ` <span class="sss-destroyed">gunnery malfunctioning</span>` : ""}${vm.offKilter ? ` <span class="sss-destroyed">off-kilter: −2 attacks and area DCs</span>` : ""}${conditionsBadge(vm.conditionPenalties?.filter(([kind]) => kind !== "spell"))}</label>
     <ul class="sss-weapons-list">${rows || `<li class="sss-hint">No starship weapons yet.</li>`}</ul>
     ${editable ? `<select data-action-change="addNPCWeapon"><option value="">+ Add starship weapon…</option>${Object.entries(NPC_WEAPONS)
       .map(([k, w]) => opt(k, w.range === 0 ? `${w.name} (melee)` : `${w.name} (${w.category}, ${w.range} zones)`, ""))

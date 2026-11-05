@@ -718,6 +718,39 @@ try {
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.castSpell.call(sheet, {}, { dataset: { spell: "503", station: "3" } });
   check("Sheet: dialog lists Xora's Blur (not the cantrip or other entries' spells)", dialogChoices, [["spon|2|-1|0", "Rank 2 — Blur (2 of 2 left)"]]);
   check("Sheet: casting spends the rank 2 slot and the chat names Blur", [xoraLog[0], flavors.at(-1)?.includes("Expended Blur (Spontaneous Spells, rank 2 slot).")], [{ "system.slots.slot2.value": 1 }, true]);
+  // Conditions on an NPC starship lower the rolls the sheet makes itself (worst status penalty only).
+  const fr2cl1 = [{ slug: "frightened", value: 2 }, { slug: "clumsy", value: 1 }];
+  check("Penalties: frightened 2 + clumsy 1 → −2 ranged (worst only), −2 melee/spell/DC", ["ranged", "melee", "spell", "dc"].map((k) => L3.conditionPenalty(fr2cl1, k)),
+    [{ penalty: -2, label: "frightened 2" }, { penalty: -2, label: "frightened 2" }, { penalty: -2, label: "frightened 2" }, { penalty: -2, label: "frightened 2" }]);
+  const cl3 = [{ slug: "frightened", value: 1 }, { slug: "clumsy", value: 3 }, { slug: "enfeebled", value: 2 }, { slug: "stupefied", value: 1 }, { slug: "off-guard", value: 1 }];
+  check("Penalties: clumsy only ranged, enfeebled only melee, stupefied only spells; off-guard ignored", ["ranged", "melee", "spell", "dc"].map((k) => L3.conditionPenalty(cl3, k).label),
+    ["clumsy 3", "enfeebled 2", "frightened 1", "frightened 1"]);
+  check("No conditions: no penalty", L3.conditionPenalty([], "ranged"), { penalty: 0, label: "" });
+  const condRolls = [];
+  globalThis.Roll = class { constructor(f, d) { this.formula = f; this.data = d; } async evaluate() { this.dice = [{ total: 10 }]; this.total = 10 + (this.data?.mod ?? 0); return this; } async toMessage(m) { condRolls.push([this.data?.mod, m.flavor]); } };
+  const condCreated = [];
+  globalThis.ChatMessage = { getSpeaker: () => ({}), create: async (m) => condCreated.push(m.content) };
+  globalThis.game.user.targets = new Set();
+  const writCond = { type: "npc", name: "Writ", level: 3, flags: { "sf2e-starship-sheets": { ship: { kind: "npc", spellTier: "moderate", stations: [],
+      weapons: [{ key: "coilgun", attackTier: "high", damageTier: "low" }, { key: "breaching-ram", attackTier: "moderate", damageTier: "high" }, { key: "farseeker-missiles" }] } } },
+    itemTypes: { condition: [{ slug: "frightened", value: 2 }, { slug: "clumsy", value: 3 }], effect: [], action: [] },
+    system: { actions: [], attributes: { hp: { value: 30, max: 30 } }, traits: { value: [] }, abilities: {} } };
+  const condSheet = new main.NPCStarshipSheet();
+  condSheet.document = writCond;
+  const condCtx = await condSheet._prepareContext({});
+  const base = [npcWeapon({ key: "coilgun", attackTier: "high" }, 3), npcWeapon({ key: "breaching-ram", attackTier: "moderate" }, 3), npcWeapon({ key: "farseeker-missiles" }, 3)];
+  check("Sheet numbers: coilgun −3 (clumsy 3), ram −2 (frightened 2), farseeker area DC −2", condCtx.weapons.map((w) => [w.attack, w.saveDC]),
+    [[base[0].attack - 3, base[0].saveDC - 2], [base[1].attack - 2, base[1].saveDC - 2], [base[2].attack - 3, base[2].saveDC - 2]]);
+  const condEl = document.createElement("div");
+  condEl.innerHTML = renderNPCSheet({ ...window.__npcVM, ...condCtx, ship: { ...window.__npcVM.ship, ...condCtx.ship, stations: [{ type: "conduit", name: "", malfunctioning: false }] } });
+  check("Sheet shows the condition penalties and the lowered spell attack", [[...condEl.querySelectorAll(".sss-card .sss-section .sss-destroyed")].map((s) => s.textContent),
+    condEl.querySelector('[data-action="npcSpellAttack"]').textContent], [["frightened 2: −2", "clumsy 3: −3 ranged attacks", "frightened 2: −2 melee attacks, area DCs"], `+${L3.npcSpellAttack(3, "moderate") - 2}`]);
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcWeaponStrike.call(condSheet, {}, { dataset: { weapon: "0", map: "0" } });
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcSpellAttack.call(condSheet, {}, { dataset: { map: "0" } });
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcAreaFire.call(condSheet, {}, { dataset: { weapon: "2", kind: "area" } });
+  check("Rolls: coilgun attack and Cosmic Cannon include the penalty and say so; Area Fire DC lowered",
+    [condRolls[0][0], condRolls[0][1].includes("Includes clumsy 3 (-3)."), condRolls[1][0], condRolls[1][1].includes("Includes frightened 2 (-2)."), condCreated[0].includes(`DC ${base[2].saveDC - 2}`)],
+    [base[0].attack - 3, true, L3.npcSpellAttack(3, "moderate") - 2, true, true]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }
