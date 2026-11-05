@@ -441,6 +441,21 @@ function targetInfo(attacker) {
   };
 }
 
+/**
+ * The party starship's crew for the combat tracker: the active party's characters and every station's helmer.
+ * With neither, every character a player owns.
+ */
+function crewForCombat(ship) {
+  const crew = new Map();
+  const add = (a) => {
+    if (a?.type === "character" && !crew.has(a.id)) crew.set(a.id, a);
+  };
+  for (const member of game.actors.party?.members ?? []) add(member);
+  for (const st of ship.stations ?? []) if (st.helmer) add(fromUuidSync(st.helmer));
+  if (!crew.size) for (const a of game.actors) if (a.hasPlayerOwner) add(a);
+  return [...crew.values()];
+}
+
 /** For attacks the system rolls itself: +2 to the attack instead of -2 to the AC when attacking from behind. */
 function behindModifiers(attacker) {
   const target = [...game.user.targets][0]?.actor;
@@ -816,6 +831,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       rollActionCheck: PCStarshipSheet.#onRollActionCheck,
       transmuteVitality: PCStarshipSheet.#onTransmuteVitality,
       vitalityRegen: PCStarshipSheet.#onVitalityRegen,
+      addCrewToCombat: PCStarshipSheet.#onAddCrewToCombat,
       areaFire: PCStarshipSheet.#onAreaFire,
       areaDamage: PCStarshipSheet.#onAreaDamage,
       primaryTarget: PCStarshipSheet.#onPrimaryTarget,
@@ -847,6 +863,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       name: actor.name,
       img: actor.img,
       editable: this.isEditable,
+      isGM: game.user.isGM,
       ship,
       derived,
       hp: { value: actor.system.attributes.hp.value, max: derived.hpMax },
@@ -1245,6 +1262,31 @@ export class PCStarshipSheet extends StarshipSheetBase {
   }
 
   /** Start of the mystic's turn: the vitality network regains 4, 6 or 8 Hit Points, up to its maximum. */
+  /**
+   * Add the crew to the combat tracker without dragging their tokens onto the map: the party's members and every
+   * station's helmer. A character with a token on the combat's scene is added with that token; the rest are added
+   * as actors with no token. Starts an encounter on the current scene when there's none.
+   */
+  static async #onAddCrewToCombat() {
+    if (!game.user.isGM) return;
+    const crew = crewForCombat(this.ship);
+    if (!crew.length) return ui.notifications.warn("No crew found: assign helmers to the stations, or set up the party.");
+    let combat = game.combat;
+    if (!combat) {
+      combat = await Combat.implementation.create({ scene: canvas?.scene?.id ?? null, active: true });
+      if (!combat) return;
+    }
+    const scene = combat.scene ?? canvas?.scene ?? null;
+    const missing = crew.filter((a) => !combat.combatants.some((c) => c.actorId === a.id || c.actor === a));
+    if (!missing.length) return ui.notifications.info("The whole crew is already in the combat tracker.");
+    await combat.createEmbeddedDocuments("Combatant", missing.map((a) => {
+      const token = scene?.tokens?.find((t) => t.actorId === a.id && t.actorLink);
+      return token ? { actorId: a.id, tokenId: token.id, sceneId: scene.id, hidden: token.hidden } : { actorId: a.id, hidden: false };
+    }));
+    ui.notifications.info(`Added to the combat tracker: ${missing.map((a) => a.name).join(", ")}.`);
+    ui.combat?.render?.();
+  }
+
   static async #onVitalityRegen(event, target) {
     const { st } = this.#station(target);
     const actor = this.#roller(st);

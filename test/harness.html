@@ -157,7 +157,7 @@ out.unshift(failures ? `<span class="fail">${failures} FAILED</span>` : `<span c
 document.getElementById("results").innerHTML = out.join("\n");
 
 // Render the PC sheet
-document.querySelector("#pc .window-content").innerHTML = renderPCSheet({
+document.querySelector("#pc .window-content").innerHTML = renderPCSheet(window.__pcVM = {
   name: "The Starfinder Skirmisher", img: "", editable: true, ship, derived: d,
   hp: { value: 72, max: 78 }, hpField: "system.attributes.hp.value",
   crewOptions: Object.entries(crew).map(([uuid, c]) => ({ uuid, name: c.name })), target: { name: "Writ of Possession", img: "", ac: 23, behind: true, starship: true, self: false, count: 2 }, tab: "stations"
@@ -636,6 +636,37 @@ try {
   onHooks.createItem.forEach((f) => f({ parent: writ }));
   onHooks.createItem.forEach((f) => f({ parent: { type: "character" } }));
   check("Token moves, target changes and conditions on the target redraw; renames and others don't", redraws.length, 4);
+  // Add crew to combat: party members and helmers, no tokens needed; skips anyone already in the tracker.
+  const ch = (id, name, extra = {}) => ({ id, name, type: "character", uuid: `Actor.${id}`, ...extra });
+  const [kaa, eff, vesk, zo, npcGuy] = [ch("kaa", "KaaZmesh"), ch("eff", "Effugy"), ch("vesk", "Vesk"), ch("zo", "Zo"), { id: "n", name: "Pirate", type: "npc" }];
+  const crewAdded = [];
+  const combat = { scene: { id: "sensor", tokens: [{ id: "tokZo", actorId: "zo", actorLink: true, hidden: false }] },
+    combatants: [{ actorId: "eff", actor: eff }], createEmbeddedDocuments: async (type, data) => crewAdded.push([type, data]) };
+  const allActors = [kaa, eff, vesk, zo, npcGuy];
+  globalThis.game.actors = Object.assign(allActors, { party: { members: [kaa, eff, npcGuy] } });
+  globalThis.fromUuidSync = (uuid) => allActors.find((a) => a.uuid === uuid) ?? null;
+  globalThis.game.combat = combat;
+  globalThis.game.user.isGM = true;
+  const notes = [];
+  globalThis.ui = { notifications: { info: (m) => notes.push(m), warn: (m) => notes.push(m) }, combat: { render() {} } };
+  const crewSheet = new main.PCStarshipSheet();
+  crewSheet.document = { type: "vehicle", flags: { "sf2e-starship-sheets": { ship: { kind: "pc", stations: [{ helmer: "Actor.vesk" }, { helmer: "Actor.zo" }, { helmer: "Actor.kaa" }, {}] } } } };
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.addCrewToCombat.call(crewSheet);
+  check("Add crew: party characters + helmers, skips Effugy (already in) and the NPC; Zo uses his scene token",
+    crewAdded[0], ["Combatant", [{ actorId: "kaa", hidden: false }, { actorId: "vesk", hidden: false }, { actorId: "zo", tokenId: "tokZo", sceneId: "sensor", hidden: false }]]);
+  check("Add crew: says who was added", notes.at(-1), "Added to the combat tracker: KaaZmesh, Vesk, Zo.");
+  // No encounter yet: one is started on the current scene first.
+  const started = [];
+  globalThis.game.combat = null;
+  globalThis.canvas = { scene: { id: "sensor", tokens: [] } };
+  globalThis.Combat = { implementation: { create: async (data) => (started.push(data), { scene: null, combatants: [], createEmbeddedDocuments: async (t, d) => started.push(d.length) }) } };
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.addCrewToCombat.call(crewSheet);
+  check("Add crew with no encounter: starts one on the current scene, then adds all 4", started, [{ scene: "sensor", active: true }, 4]);
+  const crewEl = document.createElement("div");
+  crewEl.innerHTML = renderPCSheet({ ...window.__pcVM, isGM: true });
+  const crewElPlayer = document.createElement("div");
+  crewElPlayer.innerHTML = renderPCSheet({ ...window.__pcVM, isGM: false });
+  check("Add crew button: GM only", [!!crewEl.querySelector('[data-action="addCrewToCombat"]'), !!crewElPlayer.querySelector('[data-action="addCrewToCombat"]')], [true, false]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

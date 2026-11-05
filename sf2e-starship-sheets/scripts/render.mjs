@@ -241,6 +241,7 @@ export function renderPCSheet(vm) {
           <span class="sss-tag">Medium</span>
           <input type="text" name="ship.traits" value="${esc(ship.traits)}" placeholder="Traits"${dis(editable)} class="sss-traits">
           ${link(d.frame.url, "Frame")} ${link(RULES_URL, "Rules")}
+          ${vm.isGM ? `<button type="button" data-action="addCrewToCombat" title="Add the party's characters and the stations' helmers to the combat tracker, without putting their tokens on the map. Starts an encounter if there's none."><i class="fa-solid fa-swords"></i> Add crew to combat</button>` : ""}
         </div>
       </div>
     </header>
