@@ -667,6 +667,57 @@ try {
   const crewElPlayer = document.createElement("div");
   crewElPlayer.innerHTML = renderPCSheet({ ...window.__pcVM, isGM: false });
   check("Add crew button: GM only", [!!crewEl.querySelector('[data-action="addCrewToCombat"]'), !!crewElPlayer.querySelector('[data-action="addCrewToCombat"]')], [true, false]);
+  // Magic conduit: the caster picks which spell to expend, from prepared spells and from a spontaneous repertoire.
+  const xoraSrc = [
+    { id: "prep", name: "Prepared Spells", mode: "prepared", slots: { 1: { value: 0, max: 2, prepared: [{ id: "a", expended: false, name: "Sure Strike" }, { id: "b", expended: false, name: "Force Barrage" }] } } },
+    { id: "spon", name: "Spontaneous Spells", mode: "spontaneous", slots: { 1: { value: 1, max: 3 }, 2: { value: 2, max: 2 }, 3: { value: 1, max: 1 } },
+      spells: [{ name: "Heal", rank: 1, signature: true }, { name: "Fear", rank: 1, signature: false }, { name: "Blur", rank: 2, signature: false }] }
+  ];
+  const xoraOptions = L3.availableSlots(xoraSrc);
+  check("Xora's choices: each spontaneous spell per slot rank (signature Heal heightened), each prepared spell", xoraOptions.map((o) => o.label), [
+    "Rank 3 — Spontaneous Spells: Heal (heightened) (1 of 1 left)",
+    "Rank 2 — Spontaneous Spells: Heal (heightened) (2 of 2 left)",
+    "Rank 2 — Spontaneous Spells: Blur (2 of 2 left)",
+    "Rank 1 — Prepared Spells: Sure Strike",
+    "Rank 1 — Prepared Spells: Force Barrage",
+    "Rank 1 — Spontaneous Spells: Heal (1 of 3 left)",
+    "Rank 1 — Spontaneous Spells: Fear (1 of 3 left)"
+  ]);
+  const optEl = document.createElement("select");
+  optEl.innerHTML = main.slotOptionsHtml(xoraOptions);
+  check("Cast dialog groups the choices by spellcasting entry", [...optEl.querySelectorAll("optgroup")].map((g) => [g.label, [...g.querySelectorAll("option")].map((o) => o.textContent)]), [
+    ["Spontaneous Spells", ["Rank 3 — Heal (heightened) (1 of 1 left)", "Rank 2 — Heal (heightened) (2 of 2 left)", "Rank 2 — Blur (2 of 2 left)", "Rank 1 — Heal (1 of 3 left)", "Rank 1 — Fear (1 of 3 left)"]],
+    ["Prepared Spells", ["Rank 1 — Sure Strike", "Rank 1 — Force Barrage"]]
+  ]);
+  const optNone = document.createElement("select");
+  optNone.innerHTML = main.slotOptionsHtml(L3.availableSlots([{ id: "s", name: "Spells", mode: "spontaneous", slots: { 2: { value: 1, max: 2 } }, spells: [] }]));
+  check("A rank with no repertoire spells listed still offers its slot", optNone.querySelector("option").textContent, "Rank 2 slot (1 of 2 left)");
+  // Through the sheet: Xora's real data, picking Blur from her spontaneous slots.
+  const xoraLog = [];
+  const xora = { name: "Xora", uuid: "mystic", level: 6,
+    itemTypes: {
+      spellcastingEntry: [{ id: "spon", name: "Spontaneous Spells", isPrepared: false, isSpontaneous: true, isFlexible: false, statistic: { check: { mod: 14 } },
+        system: { slots: { slot2: { value: 2, max: 2, prepared: [] } } }, update: async (u) => xoraLog.push(u) }],
+      spell: [
+        { name: "Blur", baseRank: 2, system: { location: { value: "spon" } } },
+        { name: "Light", baseRank: 1, isCantrip: true, system: { location: { value: "spon" } } },
+        { name: "Other Entry Spell", baseRank: 2, system: { location: { value: "elsewhere" } } }
+      ]
+    } };
+  xora.items = { get: (id) => xora.itemTypes.spellcastingEntry.find((e) => e.id === id) };
+  globalThis.fromUuidSync = (uuid) => (uuid === "mystic" ? xora : null);
+  const flavors = [];
+  globalThis.CONFIG.Dice.rolls = [class DamageRoll { constructor() {} async evaluate() {} async toMessage(m) { flavors.push(m?.flavor ?? ""); } }];
+  let dialogChoices = [];
+  globalThis.foundry.applications.api.DialogV2.wait = async ({ content, buttons }) => {
+    const d = document.createElement("div");
+    d.innerHTML = content;
+    dialogChoices = [...d.querySelectorAll("option")].map((o) => [o.value, o.textContent]);
+    return buttons[0].callback({}, { form: { elements: { slot: { value: "spon|2|-1|0" }, actions: { value: "3" } } } });
+  };
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.castSpell.call(sheet, {}, { dataset: { spell: "503", station: "3" } });
+  check("Sheet: dialog lists Xora's Blur (not the cantrip or other entries' spells)", dialogChoices, [["spon|2|-1|0", "Rank 2 — Blur (2 of 2 left)"]]);
+  check("Sheet: casting spends the rank 2 slot and the chat names Blur", [xoraLog[0], flavors.at(-1)?.includes("Expended Blur (Spontaneous Spells, rank 2 slot).")], [{ "system.slots.slot2.value": 1 }, true]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

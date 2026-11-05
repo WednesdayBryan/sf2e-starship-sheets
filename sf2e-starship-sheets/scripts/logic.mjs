@@ -516,8 +516,9 @@ export function npcSpellAttack(level, tier = "high") {
 /**
  * Spell slots a caster can expend to cast a leveled starship spell (rank 1 or higher). `sources` describe their
  * spellcasting entries: { id, name, mode: "prepared" | "spontaneous" | "flexible",
- * slots: { [rank]: { value, max, prepared: [{ id, expended, name }] } } }. A prepared caster gives up an
- * unexpended prepared spell; spontaneous and flexible casters use one of the rank's remaining slots.
+ * slots: { [rank]: { value, max, prepared: [{ id, expended, name }] } }, spells: [{ name, rank, signature }] }.
+ * A prepared caster gives up an unexpended prepared spell; spontaneous and flexible casters use one of the rank's
+ * remaining slots, choosing a repertoire spell it can cast (so the chat card names the spell).
  */
 export function availableSlots(sources) {
   const out = [];
@@ -528,11 +529,18 @@ export function availableSlots(sources) {
       if (src.mode === "prepared") {
         (slot.prepared ?? []).forEach((p, index) => {
           if (p.id && !p.expended) {
-            out.push({ key: `${src.id}|${rank}|${index}`, entryId: src.id, rank, index, label: `Rank ${rank} — ${src.name}: ${p.name || "prepared spell"}` });
+            out.push({ key: `${src.id}|${rank}|${index}`, entryId: src.id, entryName: src.name, rank, index, spell: p.name || null, label: `Rank ${rank} — ${src.name}: ${p.name || "prepared spell"}` });
           }
         });
       } else if (Number(slot.value) > 0) {
-        out.push({ key: `${src.id}|${rank}|-1`, entryId: src.id, rank, index: -1, label: `Rank ${rank} — ${src.name} (${slot.value} of ${slot.max} left)` });
+        // Spontaneous: offer the repertoire spells this slot can cast (that rank, or a signature spell heightened).
+        const left = `${slot.value} of ${slot.max} left`;
+        const spells = (src.spells ?? []).filter((s) => s.rank === rank || (s.signature && s.rank < rank));
+        spells.forEach((s, i) => {
+          out.push({ key: `${src.id}|${rank}|-1|${i}`, entryId: src.id, entryName: src.name, rank, index: -1, spell: s.name,
+            label: `Rank ${rank} — ${src.name}: ${s.name}${s.rank < rank ? ` (heightened)` : ""} (${left})` });
+        });
+        if (!spells.length) out.push({ key: `${src.id}|${rank}|-1`, entryId: src.id, entryName: src.name, rank, index: -1, label: `Rank ${rank} — ${src.name} (${left})` });
       }
     }
   }

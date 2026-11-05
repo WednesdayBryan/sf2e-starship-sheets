@@ -574,7 +574,12 @@ function slotSources(actor) {
           const prepared = (s?.prepared ?? []).map((p) => ({ id: p?.id ?? null, expended: !!p?.expended, name: p?.id ? actor.items?.get(p.id)?.name ?? "" : "" }));
           return [rank, s ? { value: Number(s.value) || 0, max: Number(s.max) || 0, prepared } : null];
         })
-      )
+      ),
+      // The entry's leveled spells (its repertoire, for spontaneous casters).
+      spells: (actor.itemTypes?.spell ?? [])
+        .filter((sp) => sp.system?.location?.value === e.id && !sp.isCantrip && !sp.isFocusSpell && !sp.isRitual)
+        .map((sp) => ({ name: sp.name, rank: Number(sp.baseRank ?? sp.system?.level?.value) || 1, signature: !!sp.system?.location?.signature }))
+        .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
     }));
 }
 
@@ -589,12 +594,25 @@ async function expendSlot(actor, slot) {
   return true;
 }
 
-/** Choose which spell slot to expend (and, for Cosmic Bombardment, the actions spent). */
+/** The Cast dialog's spell choices, grouped by spellcasting entry. */
+export function slotOptionsHtml(options) {
+  const groups = new Map();
+  for (const o of options) {
+    const name = o.entryName ?? "";
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(o);
+  }
+  // The group already names the entry: "Rank 2 — Heal (2 of 3 left)", or "Rank 2 slot (2 of 3 left)" with no spell listed.
+  const option = (o) => `<option value="${esc(o.key)}">${esc(o.label.replace(`${o.entryName}: `, "").replace(` — ${o.entryName} `, " slot "))}</option>`;
+  return [...groups].map(([name, list]) => (name ? `<optgroup label="${esc(name)}">${list.map(option).join("")}</optgroup>` : list.map(option).join(""))).join("");
+}
+
+/** Choose which spell (and its slot) to expend, and for Cosmic Bombardment the actions spent. */
 async function castDialog(title, options, withActions) {
-  const content = `<div class="form-group"><label>Spell slot to expend</label>
-      <select name="slot">${options.map((o) => `<option value="${esc(o.key)}">${esc(o.label)}</option>`).join("")}</select></div>
+  const content = `<div class="form-group"><label>Spell to expend</label>
+      <select name="slot">${slotOptionsHtml(options)}</select></div>
     ${withActions ? `<div class="form-group"><label>Actions spent (1–3)</label><input type="number" name="actions" value="3" min="1" max="3"></div>` : ""}
-    <p class="hint">The spell is cast at the slot's rank, and the slot is marked as used on the character sheet.</p>`;
+    <p class="hint">The starship spell is cast at the chosen spell's slot rank, and that spell or slot is marked as used on the character sheet.</p>`;
   const result = await DialogV2.wait({
     window: { title },
     content,
@@ -1032,7 +1050,9 @@ export class PCStarshipSheet extends StarshipSheetBase {
     input.rank = input.slot.rank;
     const spell = cosmicSpell(id, input.rank, input.actions);
     const speaker = ChatMessage.getSpeaker({ actor });
-    const slot = `Expended a rank ${input.rank} slot (${esc(input.slot.label.replace(/^Rank \d+ — /, ""))}).`;
+    const slot = input.slot.spell
+      ? `Expended ${esc(input.slot.spell)} (${esc(input.slot.entryName ?? "")}, rank ${input.rank} slot).`
+      : `Expended a rank ${input.rank} slot (${esc(input.slot.entryName ?? input.slot.label.replace(/^Rank \d+ — /, ""))}).`;
 
     if (id === 503) {
       return rollDamage({
