@@ -41,7 +41,7 @@ ship.bays[0] = { name: "Medical Bay", notes: "Treat Wounds +1" };
 
 const crew = {
   pilot: { name: "Asha (pilot)", pilotDC: 24, dex: 4, level: 6, ranks: { simple: 1, martial: 1, advanced: 0 } },
-  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", classDC: 21, ranks: { simple: 2, martial: 1, advanced: 0 },
+  gunner: { name: "Grix (gunner)", pilotDC: 18, dex: 4, level: 6, str: 4, attunement: "photon", canAttune: true, classDC: 21, ranks: { simple: 2, martial: 1, advanced: 0 },
     solarWeapon: { label: "Advanced Solar Weapon (Photon)", variants: ["+14", "+9", "+4"], attack: 14, agile: false, reach: true, die: "d8", dice: 2, type: "slashing" }, solarFlare: { attack: 12, dice: 2 } },
   scanner: { name: "Zo (scanners)", pilotDC: 15, dex: 2, level: 6, ranks: { simple: 1, martial: 0, advanced: 0 } },
   mystic: { name: "Vesk (mystic)", pilotDC: 12, dex: 1, level: 6, spellAttack: 14, vitality: { value: 18, max: 30, cap: 20, regen: 4 }, ranks: { simple: 1, martial: 0, advanced: 0 } }
@@ -416,9 +416,11 @@ try {
   globalThis.game.user.targets = new Set([{ actor: targetShip, document: { uuid: "Scene.s.Token.other" } }]);
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.weaponDamage.call(effSheet, {}, { dataset: { station: "5", weapon: "0" } });
   check("Aim adds precision only against the marked ship", damageFormulas, ["{(2d8+3+(2d4[precision]))[fire]}", "{(2d8+3)[fire]}"]);
+  globalThis.game.settings.get ??= () => "";
+  globalThis.ChatMessage.create ??= async () => {};
   nextDie = 20;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
-  check("Graviton Nova Blast crit: off-kilter and slowed", targetUpdates[1]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => [e.offKilter, e.speed]), [[true, -1]]);
+  check("Graviton Nova Blast crit: slowed on the target (off-kilter goes to chat to drag)", targetUpdates[1]?.["flags.sf2e-starship-sheets.ship.effects"]?.map((e) => [!!e.offKilter, e.speed]), [[false, -1]]);
   targetShip.flags["sf2e-starship-sheets"].ship.acCircumstance = 2;
   nextDie = 10;
   await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
@@ -826,6 +828,39 @@ try {
   onHooks.updateCombat.forEach((f) => f(turnCombat, { turn: 2 }));
   await new Promise((r) => setTimeout(r, 0));
   check("With the setting off, it stays", shipDeleted, []);
+  // Stellar attunement panel on the gunnery with the Starship Weapon Crystal.
+  check("Attunement summary: photon / graviton / none", [L3.attunementSummary("photon", 6, 4, 2), L3.attunementSummary("graviton", 6, 4, 2), L3.attunementSummary(null, 6, 4)], [
+    { weapon: "+3 fire on nova weapon hits", blast: "2d6+4 fire, range increment 4 zones", critical: "1d6 persistent fire", range: 4 },
+    { weapon: "nova weapon hits: target −1 zone Speed", blast: "2d8+4 bludgeoning, range increment 2 zones", critical: "off-kilter and −1 zone Speed for 1 round", range: 2 },
+    null]);
+  const panel = document.querySelector("#pc .sss-attune");
+  check("Gunnery shows Grix's attunement (photon), its effects, and Change buttons with photon current",
+    [panel?.querySelector(".sss-attune-current")?.textContent, [...panel.querySelectorAll(".sss-attune-facts li")].map((li) => li.textContent.replace(/\s+/g, " ").trim()),
+      [...panel.querySelectorAll('[data-action="changeAttunement"]')].map((b) => [b.dataset.value, b.disabled])],
+    ["Photon", ["Nova weapon +3 fire on nova weapon hits", "Nova Blast 2d6+4 fire, range increment 4 zones", "Critical Nova Blast 1d6 persistent fire"], [["photon", true], ["graviton", false], ["unattuned", false]]]);
+  check("Nova Blast row shows its range", row("Nova Blast").querySelector(".sss-range").textContent, "range increment 4 zones");
+  // Change attunement flips the system's own toggle on the Stellar Attunement feature.
+  const toggles = [];
+  const attuner = { name: "Grix", uuid: "gunner", isOwner: true, getRollOptions: () => ["stellar-attunement:photon"], system: {},
+    items: [{ id: "featSA", system: { rules: [{ key: "RollOption", option: "stellar-attunement", toggleable: true }] } }],
+    toggleRollOption: async (...a) => toggles.push(a) };
+  globalThis.fromUuidSync = (uuid) => (uuid === "gunner" ? attuner : null);
+  const gunIdx = [...document.querySelectorAll("#pc .sss-attune")][0].querySelector('[data-action="changeAttunement"]').dataset.station;
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.changeAttunement.call(sheet, {}, { dataset: { station: gunIdx, value: "graviton" } });
+  check("Change to graviton: toggles stellar-attunement on the feature", toggles, [["all", "stellar-attunement", "featSA", true, "graviton"]]);
+  // Critical Nova Blast: chat card with a draggable Off-Kilter (graviton) or a persistent fire roll (photon).
+  const critCards = [];
+  globalThis.ChatMessage = { getSpeaker: () => ({}), create: async (m) => critCards.push(m.content) };
+  globalThis.Roll = class { constructor(f, d) { this.data = d; } async evaluate() { this.dice = [{ total: 20 }]; this.total = 20 + (this.data?.mod ?? 0); return this; } async toMessage() {} };
+  globalThis.game.settings.get = (m, k) => ({ offKilterUuid: "Compendium.world.starship-conditions.Item.okilter", endRoundEffects: true, zoneWidth: 1 })[k] ?? "";
+  globalThis.game.user.targets = new Set([{ name: "Raider", actor: { ...targetShip, isOwner: true, update: async () => {} } }]);
+  const flareActor = (att) => ({ ...solarian, getRollOptions: () => [`stellar-attunement:${att}`] });
+  for (const att of ["graviton", "photon"]) {
+    globalThis.fromUuidSync = (uuid) => (uuid === "gunner" ? flareActor(att) : null);
+    await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.novaBlast.call(sheet, {}, row("Nova Blast").querySelector('[data-action="novaBlast"]'));
+  }
+  check("Graviton crit card: Raider off-kilter with a draggable Off-Kilter link", [critCards[0]?.includes("<strong>Raider</strong> is off-kilter"), critCards[0]?.includes("@UUID[Compendium.world.starship-conditions.Item.okilter]{Off-Kilter}")], [true, true]);
+  check("Photon crit card: clickable/draggable 1d6 persistent fire", critCards[1]?.includes("@Damage[1d6[persistent,fire]]{1d6 persistent fire}"), true);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

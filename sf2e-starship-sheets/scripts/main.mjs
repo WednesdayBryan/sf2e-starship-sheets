@@ -11,7 +11,7 @@ import {
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, bayCount, vitalityTransferCap, vitalityRegen, vitalityTransfer,
-  npcWeaponOffKilter, conditionPenalty, npcWeaponConditions, expiringItems, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
+  npcWeaponOffKilter, conditionPenalty, npcWeaponConditions, expiringItems, attunementSummary, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -49,6 +49,11 @@ function stellarAttunement(actor) {
   if (options.includes("stellar-attunement:photon")) return "photon";
   if (options.includes("stellar-attunement:graviton")) return "graviton";
   return null;
+}
+
+/** The item holding the solarian's stellar attunement toggle (the Stellar Attunement class feature), if any. */
+function attunementItem(actor) {
+  return actor?.items?.find?.((i) => (i.system?.rules ?? []).some((r) => r.key === "RollOption" && r.option === "stellar-attunement" && r.toggleable)) ?? null;
 }
 
 /** The solarian's solar weapon and solar flare Strikes (granted by the system while attuned). */
@@ -118,6 +123,7 @@ function crewInfo(uuid) {
     spellAttack: spellcastingEntry(a)?.statistic.check.mod ?? null,
     str: a.system?.abilities?.str?.mod ?? 0,
     attunement: stellarAttunement(a),
+    canAttune: !!attunementItem(a),
     solarWeapon: weapon
       ? {
           label: weapon.label ?? weapon.item?.name ?? "Solar Weapon",
@@ -361,6 +367,29 @@ async function postOutcomeConditions(actionId, degree, speakerActor) {
       <p>Drag onto the enemy starship's token: ${links.join(" ")}</p>
       ${game.settings.get(MODULE_ID, "endRoundEffects") ? `<p class="sss-hint">Removed automatically at the start of this crew member's next turn.</p>` : ""}
     </div>`
+  });
+}
+
+/**
+ * A critical Nova Blast: graviton makes the target off-kilter (a draggable Off-Kilter link; its −1 zone Speed is
+ * applied to the target starship automatically), photon adds 1d6 persistent fire (a damage roll to click or drag).
+ */
+async function postNovaBlastCritical(attunement, actor) {
+  const target = [...game.user.targets][0];
+  const who = target ? `<strong>${esc(target.name)}</strong>` : "The target";
+  let body = "";
+  if (attunement === "graviton") {
+    const uuid = game.settings.get(MODULE_ID, "offKilterUuid");
+    body = `<p>${who} is off-kilter and its Speed is reduced by 1 zone for 1 round, until the start of ${esc(actor.name)}'s next turn.</p>
+      <p>Drag onto the target starship's token: ${uuid ? `@UUID[${uuid}]{Off-Kilter}` : "<strong>Off-Kilter</strong>"}</p>
+      <p class="sss-hint">The −1 zone Speed is added to the target starship's effects.${game.settings.get(MODULE_ID, "endRoundEffects") ? " Off-Kilter is removed at the start of their next turn." : ""}</p>`;
+  } else if (attunement === "photon") {
+    body = `<p>${who} also takes 1d6 persistent fire damage.</p>
+      <p>@Damage[1d6[persistent,fire]]{1d6 persistent fire} <span class="sss-hint">Click to roll, or drag onto the target starship's token.</span></p>`;
+  } else return;
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ actor }),
+    content: `<div class="sss-chat"><header><strong>Nova Blast: Critical Success</strong> (${attunement})</header>${body}</div>`
   });
 }
 
@@ -942,6 +971,7 @@ export class PCStarshipSheet extends StarshipSheetBase {
       novaDamage: PCStarshipSheet.#onNovaDamage,
       novaBlast: PCStarshipSheet.#onNovaBlast,
       novaBlastDamage: PCStarshipSheet.#onNovaBlastDamage,
+      changeAttunement: PCStarshipSheet.#onChangeAttunement,
       generateShields: PCStarshipSheet.#onGenerateShields,
       ventPower: PCStarshipSheet.#onVentPower,
       strike: PCStarshipSheet.#onStrike,
@@ -1211,13 +1241,29 @@ export class PCStarshipSheet extends StarshipSheetBase {
     if (!s) return;
     const mi = Number(target.dataset.map) || 0;
     const penalty = [0, -5, -10][mi];
+    const range = attunementSummary(s.info.attunement, s.info.level, s.info.str)?.range;
     const { degree } = await rollCheck({
       label: `Nova Blast (${s.info.attunement})${mi ? ` (MAP ${penalty})` : ""}`,
       mod: s.info.solarFlare.attack + penalty,
       speaker: s.speaker,
-      dc: targetAC(this.document)
+      dc: targetAC(this.document),
+      extra: range ? `<div class="sss-traits-list"><span class="sss-trait">range increment ${range} zones</span></div>` : ""
     });
     await applyEffectsToTarget(novaEffects("blast", s.info.attunement, degree ?? -1));
+    if (degree === 3) await postNovaBlastCritical(s.info.attunement, s.actor);
+  }
+
+  /** Switch the helming solarian's stellar attunement (the toggle on their character sheet). */
+  static async #onChangeAttunement(event, target) {
+    const { st } = this.#station(target);
+    const actor = this.#roller(st);
+    if (!actor) return;
+    const item = attunementItem(actor);
+    if (!item) return ui.notifications.warn(`${actor.name} doesn't have stellar attunement.`);
+    if (!actor.isOwner) return ui.notifications.warn(`Only ${actor.name}'s owner or the GM can change their attunement.`);
+    const value = target.dataset.value;
+    await actor.toggleRollOption("all", "stellar-attunement", item.id, true, value);
+    ui.notifications.info(`${actor.name} is now ${value === "unattuned" ? "unattuned" : `${value}-attuned`}.`);
   }
 
   static async #onNovaBlastDamage(event, target) {

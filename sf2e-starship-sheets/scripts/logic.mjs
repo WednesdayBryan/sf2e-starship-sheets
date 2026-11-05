@@ -484,11 +484,21 @@ export function novaEffects(kind, attunement, degree) {
   if (kind === "weapon" && attunement === "graviton" && degree >= 2) {
     return [{ label: "−1 zone Speed until the end of its next turn (graviton nova weapon)", speed: -1 }];
   }
-  if (kind === "blast" && degree === 3) {
-    if (attunement === "graviton") return [{ label: "Off-kilter, −1 zone Speed for 1 round (graviton Nova Blast)", speed: -1, offKilter: true }];
-    if (attunement === "photon") return [{ label: "1d6 persistent fire damage (photon Nova Blast)", persistent: { formula: "1d6", type: "fire" } }];
+  // A critical Nova Blast's off-kilter (graviton) and persistent fire (photon) are posted to chat to drag or roll
+  // (see novaBlastCritical); only the Speed penalty goes on the target starship here.
+  if (kind === "blast" && degree === 3 && attunement === "graviton") {
+    return [{ label: "−1 zone Speed for 1 round (graviton Nova Blast)", speed: -1 }];
   }
   return [];
+}
+
+/** What each stellar attunement does at the gunnery (Starship Weapon Crystal, Tech Core pg. 186). */
+export function attunementSummary(attunement, level, str, flareDice = 1) {
+  if (!["photon", "graviton"].includes(attunement)) return null;
+  const blast = novaBlastDamage(attunement, str, flareDice);
+  return attunement === "photon"
+    ? { weapon: `+${Math.ceil(Math.max(1, level) / 2)} fire on nova weapon hits`, blast: `${partsLabel(blast.parts)}, range increment ${blast.range} zones`, critical: "1d6 persistent fire", range: blast.range }
+    : { weapon: "nova weapon hits: target −1 zone Speed", blast: `${partsLabel(blast.parts)}, range increment ${blast.range} zones`, critical: "off-kilter and −1 zone Speed for 1 round", range: blast.range };
 }
 
 /** Speed after temporary effects. */

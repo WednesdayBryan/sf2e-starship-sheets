@@ -1,7 +1,7 @@
 /**
  * HTML for the starship sheets. Pure functions of a view model, so they can be previewed outside Foundry.
  */
-import { EXPANSION_BAYS, bayCount, effectiveSpeed, normalizeHeading, novaBlastDamage, npcSpellAttack, partsLabel } from "./logic.mjs";
+import { EXPANSION_BAYS, attunementSummary, bayCount, effectiveSpeed, normalizeHeading, novaBlastDamage, npcSpellAttack, partsLabel } from "./logic.mjs";
 import {
   NPC_DEFAULT_ACTIONS, NPC_STATION_ACTIONS, NPC_WEAPONS, SPELL_TIERS, ACTIONS, CREW_QUARTERS_TYPES, PASSENGER_QUARTERS_TYPES, UNIVERSAL_BAYS,
   AON, EXPANSION_BAY_OPTIONS, EXPANSION_BAYS_URL, FRAMES, GRADE_LABELS, NPC_STATIONS, NPC_TIER_LABELS, NPC_TIERS, RULES_URL, SAVE_LABELS, SKILL_LABELS, STARSHIP_IMMUNITIES, STATIONS, UPGRADES, WEAPONS } from "./data.mjs";
@@ -90,7 +90,38 @@ function novaButtons(a, s) {
     .map((pen, mi) => `<button type="button" class="sss-strike" data-action="novaBlast" data-station="${i}" data-map="${mi}"${off} title="Nova flare Strike vs target's AC">${signed(c.solarFlare.attack + pen)}</button>`)
     .join("")}
     <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}"${off} title="Range increment ${blast.range} zones">${esc(partsLabel(blast.parts))}</button>
-    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}" data-critical="1"${off}>Crit</button>`;
+    <button type="button" class="sss-roll" data-action="novaBlastDamage" data-station="${i}" data-critical="1"${off}>Crit</button>
+    <span class="sss-dim sss-range">range increment ${blast.range} zones</span>`;
+}
+
+/**
+ * Gunnery with a Starship Weapon Crystal: the helming solarian's stellar attunement, buttons to change it, and what
+ * it does to the nova weapon and Nova Blast (damage, range, critical effect).
+ */
+function attunementPanel(s) {
+  if (!s.actions.some((a) => a.id === 531)) return "";
+  const c = s.helmerData;
+  if (!c || c.missing) return "";
+  if (!c.canAttune && !c.attunement) return `<div class="sss-attune"><label>Stellar attunement</label> <span class="sss-hint">${esc(c.name)} doesn't have stellar attunement</span></div>`;
+  const current = c.attunement ?? "unattuned";
+  const sum = attunementSummary(c.attunement, c.level, c.str, c.solarFlare?.dice ?? 1);
+  const buttons = c.canAttune
+    ? ["photon", "graviton", "unattuned"]
+        .map((v) => `<button type="button" class="sss-attune-btn${v === current ? " is-active" : ""}" data-action="changeAttunement" data-station="${s.index}" data-value="${v}"${v === current ? " disabled" : ""}
+          title="${v === current ? "Current attunement" : `Change ${esc(c.name)} to ${v === "unattuned" ? "unattuned" : `${v}-attuned`}`}">${v[0].toUpperCase() + v.slice(1)}</button>`)
+        .join("")
+    : "";
+  return `<div class="sss-attune sss-attune-${current}">
+    <div class="sss-attune-head"><label>Stellar attunement</label> <strong class="sss-attune-current">${current === "unattuned" ? "Unattuned" : current[0].toUpperCase() + current.slice(1)}</strong>
+      ${buttons ? `<span class="sss-attune-switch">Change: ${buttons}</span>` : ""}</div>
+    ${sum
+      ? `<ul class="sss-attune-facts">
+          <li><span>Nova weapon</span> ${esc(sum.weapon)}</li>
+          <li><span>Nova Blast</span> ${esc(sum.blast)}</li>
+          <li><span>Critical Nova Blast</span> ${esc(sum.critical)}</li>
+        </ul>`
+      : `<p class="sss-hint">Unattuned: no nova weapon attunement bonus and no Nova Blast. Attune to photon (fire, 4-zone range) or graviton (bludgeoning, 2-zone range).</p>`}
+  </div>`;
 }
 
 /** Temporary effects on the starship (from nova attacks and the like). */
@@ -380,7 +411,7 @@ function stationCard(s, vm) {
 
   const weapons = s.type === "gunnery" ? weaponsBlock(s, vm) : "";
   const rowOpts = { station: i, stationName: s.def.name, helmerName: s.helmerData?.name, disabled: s.malfunctioning };
-  const actions = `<ul class="sss-actions">${s.actions
+  const actions = `${s.type === "gunnery" ? attunementPanel(s) : ""}<ul class="sss-actions">${s.actions
     .filter((a) => a.id !== 17 && a.id !== 19)
     .map((a) => actionRow(a, { ...rowOpts, extraHtml: novaButtons(a, s) || vitalityButtons(a, s, vm) }))
     .join("")}</ul>`;
