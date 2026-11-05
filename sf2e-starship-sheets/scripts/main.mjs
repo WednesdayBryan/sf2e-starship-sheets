@@ -224,6 +224,33 @@ const OFF_KILTER = {
   }
 };
 
+/** Lock On's effect on the target. The module removes it when the combat turn advances (end of the gunner's turn). */
+const LOCKED_ON = {
+  name: "Locked On",
+  type: "effect",
+  img: "icons/svg/target.svg",
+  system: {
+    slug: "locked-on",
+    description: {
+      value: `<p>A gunner has locked on to this starship. Until the end of that gunner's turn, it takes a –1 status penalty to AC against their Strikes and a –1 circumstance penalty to Reflex saves against their Area Fire and Auto-Fire.</p>
+<p>Removed automatically when the combat turn advances.</p>
+<p><a href="${AON}actions/591-lock-on" target="_blank" rel="noopener">Lock On on Archives of Nethys</a></p>`
+    },
+    rules: [
+      { key: "FlatModifier", label: "Locked On", slug: "locked-on", selector: "ac", type: "status", value: -1 },
+      { key: "FlatModifier", label: "Locked On (Area Fire / Auto-Fire)", slug: "locked-on-reflex", selector: "reflex", type: "circumstance", value: -1 }
+    ],
+    duration: { value: -1, unit: "unlimited", expiry: null, sustained: false },
+    start: { value: 0, initiative: null },
+    level: { value: 1 },
+    tokenIcon: { show: true },
+    traits: { value: [] }
+  }
+};
+
+/** Effects that last until the end of the current turn: removed when the combat turn advances. */
+const TURN_EFFECT_SLUGS = ["locked-on"];
+
 /** An actor's conditions (frightened, clumsy, ...) as [{ slug, value }] for `conditionPenalty`. */
 const actorConditions = (actor) =>
   (actor?.itemTypes?.condition ?? []).map((c) => ({ slug: c.slug ?? c.system?.slug, value: c.value ?? c.system?.value?.value ?? 1 }));
@@ -248,17 +275,38 @@ function shipStatus(actor) {
  * Make sure the world has a "Starship Conditions" compendium holding Off-Kilter, and remember its UUID.
  * Only the active GM can create compendiums, so this runs on the GM's client.
  */
+/** The custom starship effects in the world's Starship Conditions compendium, and the setting holding each UUID. */
+const STARSHIP_EFFECTS = [[OFF_KILTER, "offKilterUuid"], [LOCKED_ON, "lockOnUuid"]];
+
+/** The GM's client creates the Starship Conditions compendium and its effects (Off-Kilter, Locked On) if missing. */
 export async function ensureOffKilter() {
   if (game.users.activeGM?.id !== game.user.id) return;
-  const saved = game.settings.get(MODULE_ID, "offKilterUuid");
-  if (saved && (await fromUuid(saved).catch(() => null))) return;
-  const CC = foundry.documents.collections?.CompendiumCollection ?? globalThis.CompendiumCollection;
-  let pack = game.packs.get(`world.${CONDITIONS_PACK}`);
-  if (!pack) pack = await CC.createCompendium({ label: "Starship Conditions", name: CONDITIONS_PACK, type: "Item" });
-  const index = await pack.getIndex();
-  const entry = index.find((e) => e.name === OFF_KILTER.name);
-  const uuid = entry ? entry.uuid ?? `Compendium.${pack.collection}.Item.${entry._id}` : (await Item.create(OFF_KILTER, { pack: pack.collection })).uuid;
-  await game.settings.set(MODULE_ID, "offKilterUuid", uuid);
+  let pack = null;
+  for (const [effect, setting] of STARSHIP_EFFECTS) {
+    const saved = game.settings.get(MODULE_ID, setting);
+    if (saved && (await fromUuid(saved).catch(() => null))) continue;
+    if (!pack) {
+      const CC = foundry.documents.collections?.CompendiumCollection ?? globalThis.CompendiumCollection;
+      pack = game.packs.get(`world.${CONDITIONS_PACK}`) ?? (await CC.createCompendium({ label: "Starship Conditions", name: CONDITIONS_PACK, type: "Item" }));
+    }
+    const entry = (await pack.getIndex()).find((e) => e.name === effect.name);
+    const uuid = entry ? entry.uuid ?? `Compendium.${pack.collection}.Item.${entry._id}` : (await Item.create(effect, { pack: pack.collection })).uuid;
+    await game.settings.set(MODULE_ID, setting, uuid);
+  }
+}
+
+/**
+ * When the combat turn advances, remove effects that last until the end of a turn (Locked On) from every starship
+ * on the combat's scene and every actor in the world. Run by the active GM.
+ */
+export async function removeTurnEffects(combat) {
+  const actors = new Set(game.actors ?? []);
+  for (const t of (combat?.scene ?? canvas?.scene)?.tokens ?? []) if (t.actor) actors.add(t.actor);
+  for (const c of combat?.combatants ?? []) if (c.actor) actors.add(c.actor);
+  for (const actor of actors) {
+    const ids = (actor.itemTypes?.effect ?? []).filter((e) => TURN_EFFECT_SLUGS.includes(e.slug ?? e.system?.slug)).map((e) => e.id);
+    if (ids.length) await actor.deleteEmbeddedDocuments("Item", ids);
+  }
 }
 
 /** UUID of a system condition (e.g. Off-Guard) in the system's condition compendium. */
@@ -1194,6 +1242,13 @@ export class PCStarshipSheet extends StarshipSheetBase {
       if (st?.malfunctioning) ui.notifications.warn("The pilot's console is malfunctioning, so the heading wasn't changed.");
       else result = `<p><strong>${esc(await changeHeading(this.document))}</strong></p>`;
     }
+    // Lock On: a draggable Locked On effect for the target, removed when the turn advances.
+    if (id === 591) {
+      const uuid = game.settings.get(MODULE_ID, "lockOnUuid");
+      const targetName = [...game.user.targets][0]?.name;
+      result = `<p>${targetName ? `<strong>${esc(targetName)}</strong>` : "The target"} takes a –1 status penalty to AC against this gunner's Strikes and a –1 circumstance penalty to Reflex saves against their Area Fire and Auto-Fire until the end of the turn.</p>
+        <p>Drag onto the target starship's token: ${uuid ? `@UUID[${uuid}]{Locked On}` : "<strong>Locked On</strong>"} <span class="sss-hint">(removed when the turn advances)</span></p>`;
+    }
     await ChatMessage.create({
       speaker: this.#speaker(st),
       content: `<div class="sss-chat">
@@ -1891,6 +1946,7 @@ Hooks.once("init", () => {
     default: 1
   });
   game.settings.register(MODULE_ID, "offKilterUuid", { scope: "world", config: false, type: String, default: "" });
+  game.settings.register(MODULE_ID, "lockOnUuid", { scope: "world", config: false, type: String, default: "" });
   game.settings.register(MODULE_ID, "shieldsAbsorb", {
     name: "Shields absorb system damage",
     hint: "When damage is applied to a starship with the system's chat buttons, take it from Shield Points first and track the compromised condition.",
@@ -1950,6 +2006,16 @@ Hooks.once("init", () => {
   // Conditions such as off-guard are items on the target.
   for (const hook of ["createItem", "deleteItem"]) Hooks.on(hook, (item) => {
     if (targeted(item.parent)) refreshTargetBanners();
+  });
+
+  // Locked On lasts until the end of the gunner's turn: the active GM removes it when the turn advances.
+  Hooks.on("updateCombat", (combat, changes) => {
+    if (!("turn" in changes || "round" in changes) || game.users.activeGM?.id !== game.user.id) return;
+    removeTurnEffects(combat).catch((err) => console.error(`${MODULE_ID} | Couldn't remove Locked On`, err));
+  });
+  // Ending the combat ends it too.
+  Hooks.on("deleteCombat", (combat) => {
+    if (game.users.activeGM?.id === game.user.id) removeTurnEffects(combat).catch(() => {});
   });
 
   // Players can't update starships they don't own; the active GM applies effects for them.

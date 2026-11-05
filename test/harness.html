@@ -751,6 +751,43 @@ try {
   check("Rolls: coilgun attack and Cosmic Cannon include the penalty and say so; Area Fire DC lowered",
     [condRolls[0][0], condRolls[0][1].includes("Includes clumsy 3 (-3)."), condRolls[1][0], condRolls[1][1].includes("Includes frightened 2 (-2)."), condCreated[0].includes(`DC ${base[2].saveDC - 2}`)],
     [base[0].attack - 3, true, L3.npcSpellAttack(3, "moderate") - 2, true, true]);
+  // Lock On: a Locked On effect is created next to Off-Kilter, posted as a draggable link, and removed when the turn advances.
+  const lockSettings = { offKilterUuid: "Compendium.world.starship-conditions.Item.okilter", lockOnUuid: "" };
+  const lockCreated = [];
+  globalThis.game.user.id = "gm";
+  globalThis.game.users = { activeGM: { id: "gm" } };
+  globalThis.game.settings.get = (m, k) => lockSettings[k] ?? "";
+  globalThis.game.settings.set = async (m, k, v) => (lockSettings[k] = v);
+  globalThis.fromUuid = async (uuid) => (uuid === lockSettings.offKilterUuid ? { name: "Off-Kilter" } : null);
+  globalThis.game.packs = { get: () => ({ collection: "world.starship-conditions", getIndex: async () => [{ name: "Off-Kilter", _id: "okilter" }] }) };
+  globalThis.Item = { create: async (data, opts) => (lockCreated.push([data.name, data.system.slug, opts.pack, data.system.rules.map((r) => [r.selector, r.type, r.value])]), { uuid: "Compendium.world.starship-conditions.Item.lock1" }) };
+  await main.ensureOffKilter();
+  check("Locked On is added to the existing Starship Conditions compendium: −1 status AC, −1 circumstance Reflex",
+    [lockCreated, lockSettings.lockOnUuid], [[["Locked On", "locked-on", "world.starship-conditions", [["ac", "status", -1], ["reflex", "circumstance", -1]]]], "Compendium.world.starship-conditions.Item.lock1"]);
+  const lockPosts = [];
+  globalThis.ChatMessage = { getSpeaker: () => ({}), create: async (m) => lockPosts.push(m.content) };
+  globalThis.game.user.targets = new Set([{ name: "Writ of Possession", actor: writ }]);
+  const lockBtn = [...document.querySelectorAll('#pc [data-action="postAction"]')].find((b) => b.dataset.actionId === "591");
+  await main.PCStarshipSheet.DEFAULT_OPTIONS.actions.postAction.call(sheet, {}, lockBtn);
+  check("Lock On's chat card names the target and has a draggable Locked On link", [lockPosts[0]?.includes("<strong>Writ of Possession</strong> takes a –1 status penalty to AC"), lockPosts[0]?.includes("@UUID[Compendium.world.starship-conditions.Item.lock1]{Locked On}")], [true, true]);
+  const lockDeleted = [];
+  const fx = (slug, id) => ({ id, slug });
+  const lockedNpc = { name: "Writ token", itemTypes: { effect: [fx("locked-on", "e1"), fx("off-kilter", "e2")] }, deleteEmbeddedDocuments: async (t, ids) => lockDeleted.push(["Writ token", ids]) };
+  const lockedPc = { name: "Party ship", itemTypes: { effect: [fx("locked-on", "e3")] }, deleteEmbeddedDocuments: async (t, ids) => lockDeleted.push(["Party ship", ids]) };
+  const plainShip = { name: "Plain", itemTypes: { effect: [] }, deleteEmbeddedDocuments: async () => lockDeleted.push(["Plain"]) };
+  globalThis.game.actors = [lockedPc, plainShip];
+  const lockCombat = { scene: { tokens: [{ actor: lockedNpc }, { actor: lockedPc }] }, combatants: [] };
+  onHooks.updateCombat.forEach((f) => f(lockCombat, { flags: {} }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("Updating the combat without changing the turn keeps Locked On", lockDeleted, []);
+  onHooks.updateCombat.forEach((f) => f(lockCombat, { turn: 2 }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("Turn advances: Locked On removed from the token ship and the party ship (Off-Kilter stays)", lockDeleted, [["Party ship", ["e3"]], ["Writ token", ["e1"]]]);
+  globalThis.game.user.id = "player";
+  lockDeleted.length = 0;
+  onHooks.updateCombat.forEach((f) => f(lockCombat, { round: 3 }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("Only the active GM removes it", lockDeleted, []);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }
