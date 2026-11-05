@@ -788,6 +788,44 @@ try {
   onHooks.updateCombat.forEach((f) => f(lockCombat, { round: 3 }));
   await new Promise((r) => setTimeout(r, 0));
   check("Only the active GM removes it", lockDeleted, []);
+  // 1-round conditions and "until your next turn" effects end at the start of the applier's next turn.
+  const at = (combatant, round) => ({ combat: "c1", combatant, round });
+  const aim = { id: "aim", type: "effect", slug: "effect-aim", isStarship: false, duration: { unit: "rounds", value: 1, expiry: "turn-start" }, appliedTurn: at("effugy", 2) };
+  const jukeOG = { id: "og", type: "condition", slug: "off-guard", isStarship: true, appliedTurn: at("pilot", 2) };
+  const jukeOK = { id: "ok", type: "effect", slug: "off-kilter", isStarship: true, appliedTurn: at("pilot", 2) };
+  const crewOG = { id: "crewOG", type: "condition", slug: "off-guard", isStarship: false, appliedTurn: at("pilot", 2) };
+  const grantedOG = { id: "gOG", type: "condition", slug: "off-guard", isStarship: true, granted: true, appliedTurn: at("pilot", 2) };
+  const twoRound = { id: "two", type: "effect", slug: "x", duration: { unit: "rounds", value: 2, expiry: "turn-start" }, appliedTurn: at("effugy", 2) };
+  const all = [aim, jukeOG, jukeOK, crewOG, grantedOG, twoRound];
+  check("Expiry: same round, nothing ends", L3.expiringItems(all, at("pilot", 2)), []);
+  check("Expiry: the pilot's next turn ends the starship's off-guard and off-kilter (not a creature's, not a granted one)", L3.expiringItems(all, at("pilot", 3)), ["og", "ok"]);
+  check("Expiry: Effugy's next turn ends Aim; a 2-round effect waits for round 4", [L3.expiringItems(all, at("effugy", 3)), L3.expiringItems(all, at("effugy", 4))], [["aim"], ["aim", "two"]]);
+  check("Expiry: another combat's items are left alone", L3.expiringItems(all, { combat: "c2", combatant: "pilot", round: 3 }), []);
+  // Through the hooks: recorded when added, removed by the GM when the pilot's next turn starts.
+  const recorded = {};
+  globalThis.game.combat = { id: "c1", started: true, round: 2, combatant: { id: "pilot" } };
+  onHooks.preCreateItem.forEach((f) => f({ type: "condition", updateSource: (u) => Object.assign(recorded, u) }));
+  check("Adding a condition during combat records the turn", recorded, { "flags.sf2e-starship-sheets.appliedTurn": { combat: "c1", combatant: "pilot", round: 2 } });
+  const shipDeleted = [];
+  const ogItem = { id: "og1", type: "condition", slug: "off-guard", flags: { "sf2e-starship-sheets": { appliedTurn: at("pilot", 2) } } };
+  const raider = { name: "Raider", flags: { "sf2e-starship-sheets": { ship: { kind: "npc" } } }, itemTypes: { condition: [ogItem], effect: [] },
+    items: { get: (id) => (id === "og1" ? ogItem : null) }, deleteEmbeddedDocuments: async (t, ids) => shipDeleted.push(ids) };
+  globalThis.game.actors = [];
+  globalThis.game.user.id = "gm";
+  lockSettings.endRoundEffects = true;
+  const turnCombat = { id: "c1", round: 3, combatant: { id: "effugy" }, scene: { tokens: [{ actor: raider }] }, combatants: [] };
+  onHooks.updateCombat.forEach((f) => f(turnCombat, { turn: 1 }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("Effugy's turn: the pilot's Juke off-guard stays", shipDeleted, []);
+  turnCombat.combatant = { id: "pilot" };
+  onHooks.updateCombat.forEach((f) => f(turnCombat, { turn: 2 }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("The pilot's next turn: the Juke off-guard is removed", shipDeleted, [["og1"]]);
+  lockSettings.endRoundEffects = false;
+  shipDeleted.length = 0;
+  onHooks.updateCombat.forEach((f) => f(turnCombat, { turn: 2 }));
+  await new Promise((r) => setTimeout(r, 0));
+  check("With the setting off, it stays", shipDeleted, []);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

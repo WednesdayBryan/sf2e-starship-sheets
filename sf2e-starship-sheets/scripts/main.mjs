@@ -11,7 +11,7 @@ import {
 import {
   DEGREE_LABELS, applyHullRepair, applyShieldGain, applyShipDamage, cantripRank, cosmicSpell, defaultNPCShip, defaultPCShip,
   degreeOfSuccess, derivePCShip, frameRow, hullIntegrity, normalizeHeading, novaBlastDamage, novaEffects, novaWeaponDamage, npcSpellAttack, npcWeapon, attackFromBehind, availableSlots, bayCount, vitalityTransferCap, vitalityRegen, vitalityTransfer,
-  npcWeaponOffKilter, conditionPenalty, npcWeaponConditions, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
+  npcWeaponOffKilter, conditionPenalty, npcWeaponConditions, expiringItems, ACTION_OUTCOME_CONDITIONS, tokenFacesLeft, ventPowerDice, vehicleSync
 } from "./logic.mjs";
 import { costGlyph, esc, renderNPCSheet, renderPCSheet, signed } from "./render.mjs";
 
@@ -299,14 +299,34 @@ export async function ensureOffKilter() {
  * When the combat turn advances, remove effects that last until the end of a turn (Locked On) from every starship
  * on the combat's scene and every actor in the world. Run by the active GM.
  */
-export async function removeTurnEffects(combat) {
+export async function removeTurnEffects(combat, { ended = false } = {}) {
   const actors = new Set(game.actors ?? []);
   for (const t of (combat?.scene ?? canvas?.scene)?.tokens ?? []) if (t.actor) actors.add(t.actor);
   for (const c of combat?.combatants ?? []) if (c.actor) actors.add(c.actor);
+  // At the start of this combatant's turn, 1-round starship conditions and "until your next turn" effects end.
+  const now = { combat: combat?.id, combatant: combat?.combatant?.id, round: combat?.round };
+  const expire = !ended && now.combatant && game.settings.get(MODULE_ID, "endRoundEffects");
   for (const actor of actors) {
-    const ids = (actor.itemTypes?.effect ?? []).filter((e) => TURN_EFFECT_SLUGS.includes(e.slug ?? e.system?.slug)).map((e) => e.id);
-    if (ids.length) await actor.deleteEmbeddedDocuments("Item", ids);
+    const ids = new Set((actor.itemTypes?.effect ?? []).filter((e) => TURN_EFFECT_SLUGS.includes(e.slug ?? e.system?.slug)).map((e) => e.id));
+    if (expire) {
+      const ship = isStarship(actor);
+      const items = [...(actor.itemTypes?.condition ?? []), ...(actor.itemTypes?.effect ?? [])].map((i) => ({
+        id: i.id, type: i.type, slug: i.slug ?? i.system?.slug, isStarship: ship, duration: i.system?.duration,
+        appliedTurn: i.flags?.[MODULE_ID]?.appliedTurn, granted: !!(i.grantedBy ?? i.flags?.pf2e?.grantedBy)
+      }));
+      for (const id of expiringItems(items, now)) ids.add(id);
+    }
+    // The system may already have removed an expired effect: only delete what's still there.
+    const present = [...ids].filter((id) => actor.items?.get ? actor.items.get(id) : true);
+    if (present.length) await actor.deleteEmbeddedDocuments("Item", present).catch((err) => console.warn(`${MODULE_ID} | Couldn't remove expired effects from ${actor.name}`, err));
   }
+}
+
+/** Record whose turn it is when a condition or effect is added during combat, so it can end at the right time. */
+function recordAppliedTurn(item) {
+  const combat = game.combat;
+  if (!combat?.started || !combat.combatant || !["condition", "effect"].includes(item.type)) return;
+  item.updateSource({ [`flags.${MODULE_ID}.appliedTurn`]: { combat: combat.id, combatant: combat.combatant.id, round: combat.round } });
 }
 
 /** UUID of a system condition (e.g. Off-Guard) in the system's condition compendium. */
@@ -339,6 +359,7 @@ async function postOutcomeConditions(actionId, degree, speakerActor) {
       <header><strong>${esc(a.name)}: ${DEGREE_LABELS[degree]}</strong></header>
       <p>${target ? esc(target.name) : "The target"} is ${slugs.map((s) => CONDITION_NAMES[s].toLowerCase()).join(" and ")} for 1 round.</p>
       <p>Drag onto the enemy starship's token: ${links.join(" ")}</p>
+      ${game.settings.get(MODULE_ID, "endRoundEffects") ? `<p class="sss-hint">Removed automatically at the start of this crew member's next turn.</p>` : ""}
     </div>`
   });
 }
@@ -1947,6 +1968,14 @@ Hooks.once("init", () => {
   });
   game.settings.register(MODULE_ID, "offKilterUuid", { scope: "world", config: false, type: String, default: "" });
   game.settings.register(MODULE_ID, "lockOnUuid", { scope: "world", config: false, type: String, default: "" });
+  game.settings.register(MODULE_ID, "endRoundEffects", {
+    name: "End 1-round conditions automatically",
+    hint: "At the start of the next turn of whoever was acting when it was added: remove off-guard and off-kilter from starships (Juke, Raider Beam), and effects that last until the start of a turn (such as Aim).",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
   game.settings.register(MODULE_ID, "shieldsAbsorb", {
     name: "Shields absorb system damage",
     hint: "When damage is applied to a starship with the system's chat buttons, take it from Shield Points first and track the compromised condition.",
@@ -2008,14 +2037,16 @@ Hooks.once("init", () => {
     if (targeted(item.parent)) refreshTargetBanners();
   });
 
-  // Locked On lasts until the end of the gunner's turn: the active GM removes it when the turn advances.
+  // When the turn advances, the active GM removes Locked On (end of the gunner's turn), and at the start of a
+  // combatant's turn the 1-round starship conditions and "until your next turn" effects they applied.
+  Hooks.on("preCreateItem", (item) => recordAppliedTurn(item));
   Hooks.on("updateCombat", (combat, changes) => {
     if (!("turn" in changes || "round" in changes) || game.users.activeGM?.id !== game.user.id) return;
-    removeTurnEffects(combat).catch((err) => console.error(`${MODULE_ID} | Couldn't remove Locked On`, err));
+    removeTurnEffects(combat).catch((err) => console.error(`${MODULE_ID} | Couldn't remove expired effects`, err));
   });
-  // Ending the combat ends it too.
+  // Ending the combat ends Locked On too.
   Hooks.on("deleteCombat", (combat) => {
-    if (game.users.activeGM?.id === game.user.id) removeTurnEffects(combat).catch(() => {});
+    if (game.users.activeGM?.id === game.user.id) removeTurnEffects(combat, { ended: true }).catch(() => {});
   });
 
   // Players can't update starships they don't own; the active GM applies effects for them.

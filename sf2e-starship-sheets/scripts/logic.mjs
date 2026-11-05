@@ -275,6 +275,26 @@ export function npcWeaponConditions(w, conditions) {
   return { ...w, attack: w.attack + attack.penalty, saveDC: w.saveDC + dc.penalty, attackCondition: attack, dcCondition: dc };
 }
 
+/**
+ * Items to remove at the start of a combatant's turn. Each item records the turn it was applied on
+ * (`appliedTurn`: { combat, combatant, round }). When that combatant's next turn starts:
+ * - off-guard and off-kilter on a starship end (Tech Core's 1-round conditions, e.g. from Juke or Raider Beam);
+ * - an effect lasting N rounds "until the start of your turn" (such as Aim) ends once N rounds have passed.
+ * `items` are [{ id, type, slug, isStarship, duration, appliedTurn, granted }]; `now` is { combat, combatant, round }.
+ */
+export function expiringItems(items, now) {
+  return (items ?? [])
+    .filter((i) => {
+      const a = i.appliedTurn;
+      // A condition granted by another item lasts as long as that item.
+      if (!a || i.granted || a.combat !== now.combat || a.combatant !== now.combatant || !(now.round > a.round)) return false;
+      if (i.isStarship && ((i.type === "condition" && i.slug === "off-guard") || (i.type === "effect" && i.slug === "off-kilter"))) return true;
+      const d = i.duration;
+      return i.type === "effect" && d?.unit === "rounds" && d.expiry === "turn-start" && now.round - a.round >= Math.max(1, Number(d.value) || 0);
+    })
+    .map((i) => i.id);
+}
+
 /** The same off-kilter penalty for an NPC starship's weapon. */
 export function npcWeaponOffKilter(w) {
   if (w.missing) return w;
