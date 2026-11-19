@@ -106,6 +106,8 @@ The NPC starship sheet shows the stat block from the NPC actor: Perception, skil
 
 ## Damage from the system's chat buttons
 
+**Damage goes to the targeted ship.** The system's Apply, Double, Half and Heal buttons normally hit the selected token, which during starship combat is usually the attacking ship. Damage cards rolled against a targeted starship (from the starship sheets, or the system's own Strike damage) remember that target, and clicking one of those buttons selects the target ship first. If the target is on a scene you aren't viewing, the click stops with a message instead. Target the enemy ship before rolling damage.
+
 With the world setting **Shields absorb system damage** turned on (the default), damage applied to a starship with the system's chat damage buttons comes off Shield Points first. It also updates compromised. The system doesn't say whether the hit was critical or bypassing, so for those cases use the sheet's **Damage** button instead.
 
 ## Not automated

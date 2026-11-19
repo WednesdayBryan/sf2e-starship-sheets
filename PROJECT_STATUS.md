@@ -1,6 +1,6 @@
 # SF2e Starship Sheets — project status
 
-Last updated: November 4, 2026. Current release: **v0.14.0**.
+Last updated: November 19, 2026. Current release: **v0.14.1**.
 
 ## Where things are
 
@@ -20,7 +20,7 @@ Last updated: November 4, 2026. Current release: **v0.14.0**.
 | `sf2e-starship-sheets/scripts/render.mjs` | HTML for both sheets |
 | `sf2e-starship-sheets/scripts/main.mjs` | Foundry code: sheets, rolls, chat, hooks, Create Starship button |
 | `sf2e-starship-sheets/README.md` | Full description of every feature |
-| `test/harness.html` | Test page: 208 rules/render checks plus previews of both sheets |
+| `test/harness.html` | Test page: 215 rules/render checks plus previews of both sheets |
 | `test/serve.ps1` | Tiny local web server for the test page (`http://localhost:8767/`) |
 | `build.ps1` | Builds `dist/module.zip` and `dist/module.json` for a release |
 | `dist/` | Build output (not in Git) |
@@ -60,6 +60,8 @@ Each macro fills in an existing NPC actor of that exact name. Run it as a GM Scr
 **Also (v0.13.0):** party conduit spells expend real spell slots; the mystic's vitality network can heal the ship (Transmute Vitality); Nova Strike/Surge are rolled by the sheet with d10 dice only when the solar weapon has reach; Nova Blast uses the solar flare's dice count.
 
 **Also (v0.14.0):** target banner on both sheets; GM button to add the crew to combat without tokens; conduit casters pick the exact spell to expend (prepared or spontaneous repertoire); NPC sheet rolls apply condition penalties; Lock On posts a Locked On effect removed when the turn advances; starship off-guard/off-kilter and "until your next turn" effects (Aim) end automatically (world setting); gunnery stellar attunement panel with Change buttons and Nova Blast range; critical Nova Blasts post draggable Off-Kilter or persistent fire.
+
+**Also (v0.14.1):** damage card Apply buttons select the targeted starship first (the system otherwise applies to the selected token, usually the attacker).
 
 **Both sheets:** attacks against a targeted starship from behind (by its heading and the tokens' positions, outside its zone) treat it as off-guard (−2 AC); world setting "Zone width (grid squares)". A "Starship Conditions" world compendium holds the custom Off-Kilter effect, created by the GM's client.
 
@@ -118,3 +120,4 @@ Git and the GitHub CLI are installed on this PC, and the CLI is signed in as Wed
 | 0.13.1 | Expansion bays: universal (free) bays with crew quarters types; selected bays with a 5th slot from comfortable crew quarters; summaries |
 | 0.13.2 | NPC Strikes show their range in zones, with an editable Zones box |
 | 0.14.0 | Third playtest: target banner; Add crew to combat; choose the spell to expend; NPC condition penalties; Lock On's Locked On effect; 1-round conditions and Aim end on time; attunement panel and Nova Blast crit cards |
+| 0.14.1 | Damage cards rolled against a starship apply to the targeted ship, not the selected attacker |
