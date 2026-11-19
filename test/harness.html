@@ -861,6 +861,46 @@ try {
   }
   check("Graviton crit card: Raider off-kilter with a draggable Off-Kilter link", [critCards[0]?.includes("<strong>Raider</strong> is off-kilter"), critCards[0]?.includes("@UUID[Compendium.world.starship-conditions.Item.okilter]{Off-Kilter}")], [true, true]);
   check("Photon crit card: clickable/draggable 1d6 persistent fire", critCards[1]?.includes("@Damage[1d6[persistent,fire]]{1d6 persistent fire}"), true);
+  // Damage cards remember the targeted ship, and their Apply buttons select it first.
+  const dmgMessages = [];
+  globalThis.CONFIG.Dice.rolls = [class DamageRoll { constructor() {} async evaluate() {} async toMessage(m) { dmgMessages.push(m); } }];
+  const sceneA = { id: "sceneA" };
+  const controlLog = [];
+  const makeToken = (name, actor, scene, controlled = false) => {
+    const doc = { name, actor, parent: scene, uuid: `Scene.${scene.id}.Token.${name}` };
+    doc.object = { controlled, control: (o) => controlLog.push([name, o]) };
+    return doc;
+  };
+  const writTok = makeToken("Writ", writ, sceneA);
+  const crewTok = makeToken("Effugy", { type: "character", name: "Effugy" }, sceneA);
+  const farTok = makeToken("Far", writ, { id: "sceneB" });
+  globalThis.canvas = { scene: sceneA, tokens: { controlled: [] } };
+  globalThis.fromUuidSync = (uuid) => [writTok, crewTok, farTok].find((t) => t.uuid === uuid) ?? null;
+  const dmgNotes = [];
+  globalThis.ui = { notifications: { info: (m) => dmgNotes.push(m), warn: (m) => dmgNotes.push(m) } };
+  globalThis.game.user.targets = new Set([{ name: "Writ", document: writTok, actor: writ }]);
+  const dmgSheet = new main.NPCStarshipSheet();
+  dmgSheet.document = writCond;
+  await main.NPCStarshipSheet.DEFAULT_OPTIONS.actions.npcWeaponDamage.call(dmgSheet, {}, { dataset: { weapon: "0" } });
+  check("A damage card rolled from the sheet records the targeted token", dmgMessages[0]?.flags, { "sf2e-starship-sheets": { target: "Scene.sceneA.Token.Writ" } });
+  check("Apply on that card selects the target ship first", [main.selectDamageTarget({ flags: dmgMessages[0].flags }), controlLog, dmgNotes.at(-1)],
+    [true, [["Writ", { releaseOthers: true }]], "Applying to Writ, the targeted starship."]);
+  controlLog.length = 0;
+  check("System Strike damage cards use the system's recorded target", [main.selectDamageTarget({ flags: { pf2e: { context: { target: { token: "Scene.sceneA.Token.Writ" } } } } }), controlLog.length], [true, 1]);
+  controlLog.length = 0;
+  check("A target that isn't a starship, or no target: the system's normal behavior", [main.selectDamageTarget({ flags: { "sf2e-starship-sheets": { target: "Scene.sceneA.Token.Effugy" } } }), main.selectDamageTarget({ flags: {} }), controlLog.length], [true, true, 0]);
+  check("Target on another scene: stop and explain", [main.selectDamageTarget({ flags: { "sf2e-starship-sheets": { target: "Scene.sceneB.Token.Far" } } }), controlLog.length, dmgNotes.at(-1)?.startsWith("Far isn't on the scene")], [false, 0, true]);
+  writTok.object.controlled = true;
+  globalThis.canvas.tokens.controlled = [writTok.object];
+  check("Already the only selected token: nothing changes", [main.selectDamageTarget({ flags: dmgMessages[0].flags }), controlLog.length], [true, 0]);
+  // The hook wires the buttons on cards with a target.
+  const card = document.createElement("div");
+  card.innerHTML = `<button data-action="applyDamage" data-multiplier="1">Apply</button>`;
+  globalThis.canvas.tokens.controlled = [];
+  writTok.object.controlled = false;
+  onHooks.renderChatMessageHTML.forEach((f) => f({ flags: dmgMessages[0].flags }, card));
+  card.querySelector("button").click();
+  check("Clicking Apply on the card selects the target", controlLog.map((c) => c[0]), ["Writ"]);
 } catch (err) {
   document.getElementById("results").innerHTML += `\n<span class="fail">FAIL</span> main.mjs: ${err.stack}`;
 }

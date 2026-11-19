@@ -102,7 +102,7 @@ async function rollNovaWeaponDamage(info, strike, { event, critical, speaker }) 
     try {
       const roll = new DamageRoll(novaFormula);
       await roll.evaluate();
-      return roll.toMessage({ speaker, flavor });
+      return roll.toMessage({ speaker, flavor, flags: targetFlags() });
     } catch (err) {
       console.warn(`${MODULE_ID} | Nova damage from the system formula failed, using the module's formula`, err);
     }
@@ -419,6 +419,38 @@ async function postNotes(actor, title, notes) {
 /* ---------------------------------- rolls ---------------------------------- */
 
 /** Roll damage, as the system's damage roll when possible so its apply-damage buttons appear. `parts` mixes types. */
+/** Chat message flags recording the user's targeted token, so the card's Apply buttons can damage it. */
+function targetFlags() {
+  const uuid = [...(game.user?.targets ?? [])][0]?.document?.uuid;
+  return uuid ? { [MODULE_ID]: { target: uuid } } : {};
+}
+
+/** The targeted token a damage card was rolled against: the module's flag, or the system's own roll context. */
+export function damageCardTarget(message) {
+  return message?.flags?.[MODULE_ID]?.target ?? message?.flags?.pf2e?.context?.target?.token ?? message?.flags?.sf2e?.context?.target?.token ?? null;
+}
+
+/**
+ * The system's damage Apply buttons hit the user's selected tokens, which during starship combat is usually the
+ * attacking ship. When a damage card was rolled against a starship, select that target first so it takes the damage.
+ * Returns false when the target can't be selected (another scene) and the click should stop.
+ */
+export function selectDamageTarget(message) {
+  const uuid = damageCardTarget(message);
+  if (!uuid) return true;
+  const doc = fromUuidSync(uuid);
+  if (!doc?.actor || !isStarship(doc.actor)) return true;
+  const token = doc.object;
+  if (!token || doc.parent !== canvas?.scene) {
+    ui.notifications.warn(`${doc.name} isn't on the scene you're viewing: open that scene, or select the token that should take the damage and use the system's buttons.`);
+    return false;
+  }
+  if (token.controlled && canvas.tokens?.controlled?.length === 1) return true;
+  token.control({ releaseOthers: true });
+  ui.notifications.info(`Applying to ${doc.name}, the targeted starship.`);
+  return true;
+}
+
 async function rollDamage({ formula, type, parts, critical = false, flavor, speaker }) {
   parts ??= [{ formula, type }];
   const DamageRoll = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll");
@@ -438,7 +470,7 @@ async function rollDamage({ formula, type, parts, critical = false, flavor, spea
     roll = new Roll(critical ? `2*(${sum})` : sum);
     await roll.evaluate();
   }
-  return roll.toMessage({ speaker, flavor });
+  return roll.toMessage({ speaker, flavor, flags: targetFlags() });
 }
 
 /* ---------------------------------- effects ---------------------------------- */
@@ -2081,6 +2113,19 @@ Hooks.once("init", () => {
   // Conditions such as off-guard are items on the target.
   for (const hook of ["createItem", "deleteItem"]) Hooks.on(hook, (item) => {
     if (targeted(item.parent)) refreshTargetBanners();
+  });
+
+  // Damage cards rolled against a starship: Apply (full, half, double, healing) goes to the targeted ship.
+  Hooks.on("renderChatMessageHTML", (message, html) => {
+    if (!damageCardTarget(message)) return;
+    for (const button of html?.querySelectorAll?.('button[data-action="applyDamage"]') ?? []) {
+      button.addEventListener("click", (event) => {
+        if (!selectDamageTarget(message)) {
+          event.stopPropagation();
+          event.preventDefault();
+        }
+      });
+    }
   });
 
   // When the turn advances, the active GM removes Locked On (end of the gunner's turn), and at the start of a
